@@ -121,7 +121,7 @@ LEARNHOUSE_INITIAL_ADMIN_EMAIL=admin@${DOMAIN}
 LEARNHOUSE_INITIAL_ADMIN_PASSWORD=changeme
 
 # ── Database ──────────────────────────────────────────
-LEARNHOUSE_SQL_CONNECTION_STRING=postgresql+asyncpg://learnhouse:${POSTGRES_PASSWORD}@db:5432/learnhouse
+LEARNHOUSE_SQL_CONNECTION_STRING=postgresql+psycopg2://learnhouse:${POSTGRES_PASSWORD}@db:5432/learnhouse
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 
 # ── Redis ─────────────────────────────────────────────
