@@ -58,7 +58,13 @@ prompt CONTACT_EMAIL   "Contact email"
 
 echo ""
 echo "--- Domain ---"
-prompt DOMAIN "Domain (or IP.sslip.io if no domain yet)"
+DROPLET_IP=$(curl -sf http://169.254.169.254/metadata/v1/interfaces/public/0/ipv4/address || echo "")
+DEFAULT_DOMAIN=${DROPLET_IP:+"${DROPLET_IP}.sslip.io"}
+prompt_optional DOMAIN "Domain (press enter for ${DEFAULT_DOMAIN:-your domain})" "$DEFAULT_DOMAIN"
+while [[ -z "$DOMAIN" ]]; do
+  echo "  Domain is required."
+  prompt_optional DOMAIN "Domain" "$DEFAULT_DOMAIN"
+done
 
 echo ""
 echo "--- Admin account ---"
