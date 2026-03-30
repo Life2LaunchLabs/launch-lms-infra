@@ -1,0 +1,3 @@
+{$LEARNHOUSE_DOMAIN} {
+    reverse_proxy localhost:80
+}
