@@ -5,41 +5,112 @@ set -e
 
 DEPLOY_DIR=/opt/learnhouse
 
-# ── Gather required inputs ─────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+prompt() {
+  local var=$1 msg=$2 secret=${3:-false}
+  while true; do
+    if [[ "$secret" == "true" ]]; then
+      read -rsp "$msg: " val </dev/tty; echo ""
+    else
+      read -rp "$msg: " val </dev/tty
+    fi
+    [[ -n "$val" ]] && { printf -v "$var" '%s' "$val"; return; }
+    echo "  This field is required."
+  done
+}
+
+prompt_optional() {
+  local var=$1 msg=$2 default=$3
+  read -rp "$msg${default:+ [$default]}: " val </dev/tty
+  printf -v "$var" '%s' "${val:-$default}"
+}
+
+prompt_choice() {
+  local var=$1 msg=$2; shift 2
+  local opts=("$@")
+  while true; do
+    echo "$msg"
+    for i in "${!opts[@]}"; do echo "  $((i+1))) ${opts[$i]}"; done
+    read -rp "Choice [1-${#opts[@]}]: " choice </dev/tty
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#opts[@]} )); then
+      printf -v "$var" '%s' "${opts[$((choice-1))]}"; return
+    fi
+    echo "  Invalid choice."
+  done
+}
+
+gen_secret() {
+  python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+}
+
+# ── Gather inputs ─────────────────────────────────────────────────────────────
 
 echo ""
 echo "LearnHouse Droplet Setup"
 echo "========================"
 echo ""
 
-read -rp "Domain (or IP.sslip.io if no domain yet): " DOMAIN </dev/tty
-while [[ -z "$DOMAIN" ]]; do
-  echo "Domain is required."
-  read -rp "Domain: " DOMAIN </dev/tty
-done
+echo "--- Site ---"
+prompt SITE_NAME       "Site name (e.g. My LMS)"
+prompt_optional SITE_DESCRIPTION "Site description" ""
+prompt CONTACT_EMAIL   "Contact email"
 
-read -rp "GitHub username: " GHCR_USER </dev/tty
-while [[ -z "$GHCR_USER" ]]; do
-  echo "GitHub username is required."
-  read -rp "GitHub username: " GHCR_USER </dev/tty
-done
+echo ""
+echo "--- Domain ---"
+prompt DOMAIN "Domain (or IP.sslip.io if no domain yet)"
 
+echo ""
+echo "--- Admin account ---"
+prompt ADMIN_PASSWORD "Initial admin password" true
+
+echo ""
+echo "--- Email ---"
+prompt_choice EMAIL_PROVIDER "Email provider?" "resend" "smtp"
+if [[ "$EMAIL_PROVIDER" == "resend" ]]; then
+  prompt RESEND_API_KEY "Resend API key" true
+  prompt SYSTEM_EMAIL   "System sender email (e.g. noreply@yourdomain.com)"
+else
+  prompt SMTP_HOST     "SMTP host"
+  prompt_optional SMTP_PORT "SMTP port" "587"
+  prompt SMTP_USERNAME "SMTP username"
+  prompt SMTP_PASSWORD "SMTP password" true
+  prompt SYSTEM_EMAIL  "System sender email"
+fi
+
+echo ""
+echo "--- Content delivery ---"
+prompt_choice CONTENT_DELIVERY "File storage?" "filesystem (local, simpler)" "s3api (AWS S3 or compatible)"
+if [[ "$CONTENT_DELIVERY" == s3api* ]]; then
+  CONTENT_DELIVERY=s3api
+  prompt S3_BUCKET       "S3 bucket name"
+  prompt S3_ENDPOINT     "S3 endpoint URL (e.g. https://s3.amazonaws.com)"
+  prompt AWS_KEY_ID      "AWS access key ID" true
+  prompt AWS_KEY_SECRET  "AWS secret access key" true
+else
+  CONTENT_DELIVERY=filesystem
+fi
+
+echo ""
+echo "--- GitHub (for image pull) ---"
+prompt GHCR_USER "GitHub username"
 echo ""
 echo "Create a short-lived PAT (7 days) with read:packages scope at:"
 echo "  https://github.com/settings/tokens/new"
-echo "Delete it after setup is complete."
+echo "Delete it once setup is complete."
 echo ""
-read -rsp "GitHub PAT (temporary, for initial image pull only): " GHCR_PAT </dev/tty
+prompt GHCR_PAT "GitHub PAT (temporary)" true
+
+# ── Auto-generate secrets ─────────────────────────────────────────────────────
+
 echo ""
-while [[ -z "$GHCR_PAT" ]]; do
-  echo "GitHub PAT is required."
-  read -rsp "GitHub PAT: " GHCR_PAT </dev/tty
-  echo ""
-done
+echo "==> Generating secrets..."
+POSTGRES_PASSWORD=$(gen_secret)
+JWT_SECRET=$(gen_secret)
+COLLAB_KEY=$(gen_secret)
 
 # ── Install Docker ─────────────────────────────────────────────────────────────
 
-echo ""
 echo "==> Installing Docker..."
 curl -fsSL https://get.docker.com | sh
 apt-get install -y docker-compose-plugin
@@ -65,37 +136,94 @@ systemctl enable docker
 systemctl start docker
 systemctl reload caddy
 
-# ── Pull image and immediately logout ─────────────────────────────────────────
+# ── Write .env ────────────────────────────────────────────────────────────────
 
-echo "==> Pulling LearnHouse image (temporary credentials)..."
+echo "==> Writing .env..."
+cat > "$DEPLOY_DIR/.env" <<EOF
+# ── Site ──────────────────────────────────────────────
+LEARNHOUSE_SITE_NAME=${SITE_NAME}
+LEARNHOUSE_SITE_DESCRIPTION=${SITE_DESCRIPTION}
+LEARNHOUSE_CONTACT_EMAIL=${CONTACT_EMAIL}
+
+# ── Hosting ───────────────────────────────────────────
+LEARNHOUSE_DOMAIN=${DOMAIN}
+LEARNHOUSE_FRONTEND_DOMAIN=${DOMAIN}
+LEARNHOUSE_SSL=true
+LEARNHOUSE_PORT=9000
+LEARNHOUSE_USE_DEFAULT_ORG=true
+LEARNHOUSE_SELF_HOSTED=true
+LEARNHOUSE_ALLOWED_ORIGINS=https://${DOMAIN}
+LEARNHOUSE_ALLOWED_REGEXP=https://${DOMAIN//./\\.}
+LEARNHOUSE_COOKIE_DOMAIN=${DOMAIN}
+LEARNHOUSE_ENV=prod
+
+# ── Security ──────────────────────────────────────────
+LEARNHOUSE_AUTH_JWT_SECRET_KEY=${JWT_SECRET}
+COLLAB_INTERNAL_KEY=${COLLAB_KEY}
+LEARNHOUSE_INITIAL_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+
+# ── Database ──────────────────────────────────────────
+LEARNHOUSE_SQL_CONNECTION_STRING=postgresql+asyncpg://learnhouse:${POSTGRES_PASSWORD}@db:5432/learnhouse
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
+# ── Redis ─────────────────────────────────────────────
+LEARNHOUSE_REDIS_CONNECTION_STRING=redis://redis:6379
+
+# ── Email ─────────────────────────────────────────────
+LEARNHOUSE_EMAIL_PROVIDER=${EMAIL_PROVIDER}
+LEARNHOUSE_SYSTEM_EMAIL_ADDRESS=${SYSTEM_EMAIL}
+LEARNHOUSE_RESEND_API_KEY=${RESEND_API_KEY:-}
+LEARNHOUSE_SMTP_HOST=${SMTP_HOST:-}
+LEARNHOUSE_SMTP_PORT=${SMTP_PORT:-587}
+LEARNHOUSE_SMTP_USERNAME=${SMTP_USERNAME:-}
+LEARNHOUSE_SMTP_PASSWORD=${SMTP_PASSWORD:-}
+
+# ── Content delivery ──────────────────────────────────
+LEARNHOUSE_CONTENT_DELIVERY_TYPE=${CONTENT_DELIVERY}
+LEARNHOUSE_S3_API_BUCKET_NAME=${S3_BUCKET:-}
+LEARNHOUSE_S3_API_ENDPOINT_URL=${S3_ENDPOINT:-}
+AWS_ACCESS_KEY_ID=${AWS_KEY_ID:-}
+AWS_SECRET_ACCESS_KEY=${AWS_KEY_SECRET:-}
+
+# ── AI (optional — add key to enable) ─────────────────
+LEARNHOUSE_IS_AI_ENABLED=false
+LEARNHOUSE_GEMINI_API_KEY=
+
+# ── Payments (optional) ───────────────────────────────
+LEARNHOUSE_STRIPE_SECRET_KEY=
+LEARNHOUSE_STRIPE_PUBLISHABLE_KEY=
+LEARNHOUSE_STRIPE_WEBHOOK_STANDARD_SECRET=
+LEARNHOUSE_STRIPE_WEBHOOK_CONNECT_SECRET=
+EOF
+
+chmod 600 "$DEPLOY_DIR/.env"
+
+# ── Pull image and logout ─────────────────────────────────────────────────────
+
+echo "==> Pulling LearnHouse image..."
 echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" pull
 docker logout ghcr.io
-echo "GHCR credentials removed. Delete your PAT at github.com/settings/tokens"
 
-# ── Create .env from example ──────────────────────────────────────────────────
+# ── Start ─────────────────────────────────────────────────────────────────────
 
-echo "==> Creating .env from template..."
-cp "$DEPLOY_DIR/.env.example" "$DEPLOY_DIR/.env"
-sed -i "s/^LEARNHOUSE_DOMAIN=.*/LEARNHOUSE_DOMAIN=$DOMAIN/" "$DEPLOY_DIR/.env"
-sed -i "s/^LEARNHOUSE_FRONTEND_DOMAIN=.*/LEARNHOUSE_FRONTEND_DOMAIN=$DOMAIN/" "$DEPLOY_DIR/.env"
-sed -i "s/^LEARNHOUSE_COOKIE_DOMAIN=.*/LEARNHOUSE_COOKIE_DOMAIN=$DOMAIN/" "$DEPLOY_DIR/.env"
-sed -i "s/^LEARNHOUSE_ALLOWED_ORIGINS=.*/LEARNHOUSE_ALLOWED_ORIGINS=https:\/\/$DOMAIN/" "$DEPLOY_DIR/.env"
-sed -i "s/^LEARNHOUSE_ALLOWED_REGEXP=.*/LEARNHOUSE_ALLOWED_REGEXP=https:\/\/${DOMAIN//./\\.}/" "$DEPLOY_DIR/.env"
+echo "==> Starting services..."
+docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "Setup complete. Fill in the remaining values in $DEPLOY_DIR/.env:"
+echo "================================================================"
+echo " LearnHouse is starting up at https://${DOMAIN}"
+echo "================================================================"
 echo ""
-echo "  Required:"
-echo "    LEARNHOUSE_AUTH_JWT_SECRET_KEY  (generate: python3 -c \"import secrets; print(secrets.token_urlsafe(32))\")"
-echo "    COLLAB_INTERNAL_KEY             (generate same way)"
-echo "    LEARNHOUSE_INITIAL_ADMIN_PASSWORD"
-echo "    LEARNHOUSE_SQL_CONNECTION_STRING"
-echo "    LEARNHOUSE_REDIS_CONNECTION_STRING"
+echo " Generated secrets (save these somewhere safe):"
+echo "   Postgres password : ${POSTGRES_PASSWORD}"
+echo "   JWT secret        : ${JWT_SECRET}"
+echo "   Collab key        : ${COLLAB_KEY}"
 echo ""
-echo "  Then start the app:"
-echo "    cd $DEPLOY_DIR && docker compose up -d"
+echo " These are also saved in ${DEPLOY_DIR}/.env"
 echo ""
-echo "  Remember to delete your temporary PAT at github.com/settings/tokens"
+echo " Remember to delete your temporary GitHub PAT:"
+echo "   https://github.com/settings/tokens"
+echo "================================================================"
