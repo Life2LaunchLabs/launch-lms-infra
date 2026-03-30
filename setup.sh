@@ -54,6 +54,7 @@ echo "==> Generating secrets..."
 POSTGRES_PASSWORD=$(gen_secret)
 JWT_SECRET=$(gen_secret)
 COLLAB_KEY=$(gen_secret)
+NEXTAUTH_SECRET=$(gen_secret)
 
 # ── Install Docker ─────────────────────────────────────────────────────────────
 
@@ -103,9 +104,20 @@ LEARNHOUSE_ALLOWED_REGEXP=https://${DOMAIN//./\\.}
 LEARNHOUSE_COOKIE_DOMAIN=${DOMAIN}
 LEARNHOUSE_ENV=prod
 
+# ── Frontend ──────────────────────────────────────────
+NEXT_PUBLIC_LEARNHOUSE_DOMAIN=${DOMAIN}
+NEXT_PUBLIC_LEARNHOUSE_API_URL=https://${DOMAIN}/api/v1/
+NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL=https://${DOMAIN}/
+NEXT_PUBLIC_LEARNHOUSE_HTTPS=true
+NEXT_PUBLIC_LEARNHOUSE_MULTI_ORG=false
+NEXT_PUBLIC_LEARNHOUSE_DEFAULT_ORG=
+NEXTAUTH_URL=https://${DOMAIN}
+NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+
 # ── Security ──────────────────────────────────────────
 LEARNHOUSE_AUTH_JWT_SECRET_KEY=${JWT_SECRET}
 COLLAB_INTERNAL_KEY=${COLLAB_KEY}
+LEARNHOUSE_INITIAL_ADMIN_EMAIL=admin@${DOMAIN}
 LEARNHOUSE_INITIAL_ADMIN_PASSWORD=changeme
 
 # ── Database ──────────────────────────────────────────
@@ -113,7 +125,7 @@ LEARNHOUSE_SQL_CONNECTION_STRING=postgresql+asyncpg://learnhouse:${POSTGRES_PASS
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 
 # ── Redis ─────────────────────────────────────────────
-LEARNHOUSE_REDIS_CONNECTION_STRING=redis://redis:6379
+LEARNHOUSE_REDIS_CONNECTION_STRING=redis://redis:6379/learnhouse
 
 # ── Email (configure when ready) ──────────────────────
 LEARNHOUSE_EMAIL_PROVIDER=resend
