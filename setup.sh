@@ -12,23 +12,23 @@ echo "LearnHouse Droplet Setup"
 echo "========================"
 echo ""
 
-read -rp "Domain (e.g. learn.yourdomain.com): " DOMAIN
+read -rp "Domain (e.g. learn.yourdomain.com): " DOMAIN </dev/tty
 while [[ -z "$DOMAIN" ]]; do
   echo "Domain is required."
-  read -rp "Domain: " DOMAIN
+  read -rp "Domain: " DOMAIN </dev/tty
 done
 
-read -rp "GitHub username (for GHCR image pull): " GHCR_USER
+read -rp "GitHub username (for GHCR image pull): " GHCR_USER </dev/tty
 while [[ -z "$GHCR_USER" ]]; do
   echo "GitHub username is required."
-  read -rp "GitHub username: " GHCR_USER
+  read -rp "GitHub username: " GHCR_USER </dev/tty
 done
 
-read -rsp "GitHub PAT with read:packages scope: " GHCR_PAT
+read -rsp "GitHub PAT with read:packages scope: " GHCR_PAT </dev/tty
 echo ""
 while [[ -z "$GHCR_PAT" ]]; do
   echo "GitHub PAT is required."
-  read -rsp "GitHub PAT: " GHCR_PAT
+  read -rsp "GitHub PAT: " GHCR_PAT </dev/tty
   echo ""
 done
 
