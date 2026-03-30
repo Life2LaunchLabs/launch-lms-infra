@@ -2,7 +2,7 @@ your.domain.com {
     request_body {
         max_size 500MB
     }
-    reverse_proxy localhost:80 {
+    reverse_proxy localhost:8080 {
         transport http {
             read_timeout 300s
         }
