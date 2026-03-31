@@ -1,57 +1,80 @@
 # learnhouse-infra
 
-Deployment infrastructure for [LearnHouse](https://github.com/learnhouse/app) on a DigitalOcean Droplet.
+Deployment infrastructure for LearnHouse on a DigitalOcean Droplet.
 
-## How it works
+## Architecture
 
-- `setup.sh` — run once on a fresh droplet to install Docker, Caddy, and configure everything
-- `deploy.sh` — called by GitHub Actions on every push to `prod` to pull the latest image and restart
-- `docker-compose.yml` — runs the LearnHouse container from GHCR
-- `Caddyfile` — Caddy reverse proxy with automatic TLS
-- `.env.example` — all supported config variables with descriptions
+- **Caddy** — TLS termination, reverse proxy (ports 80/443 on host)
+- **LearnHouse container** — Next.js + FastAPI + Hocuspocus + internal Nginx, bound to `127.0.0.1:8080`
+- **PostgreSQL** — pgvector:pg16, data persisted in Docker volume
+- **Redis** — redis:7-alpine with AOF persistence
+
+All containers run via Docker Compose. Caddy auto-provisions TLS via Let's Encrypt.
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `setup.sh` | Bootstrap a fresh droplet — installs Docker, Caddy, pulls image, starts everything |
+| `deploy.sh` | Called by GitHub Actions on every push to `prod` |
+| `docker-compose.yml` | All services |
+| `Caddyfile` | Reverse proxy config — edit domain here after setup |
+| `.env.example` | All supported config variables |
 
 ## Bootstrap a new droplet
 
+**Prerequisites:**
+- Ubuntu 24.04 droplet
+- DNS A record pointing your domain at the droplet IP
+- GitHub PAT (7-day expiry) with `read:packages` scope — [create one here](https://github.com/settings/tokens/new)
+
+**Run:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Life2LaunchLabs/learnhouse-infra/main/setup.sh | bash
 ```
 
-The script will prompt for:
-- **Domain** — the domain pointing at this droplet
-- **GitHub username** — for pulling the image from GHCR
-- **GitHub PAT** — a Personal Access Token with `read:packages` scope (create at github.com/settings/tokens)
+The script prompts for your domain and GitHub credentials, generates all secrets, and starts the app. Initial admin login is printed at the end.
 
-After setup, fill in the remaining required values in `/opt/learnhouse/.env`:
-
-| Variable | How to generate |
-|---|---|
-| `LEARNHOUSE_AUTH_JWT_SECRET_KEY` | `python3 -c "import secrets; print(secrets.token_urlsafe(32))"` |
-| `COLLAB_INTERNAL_KEY` | same |
-| `LEARNHOUSE_INITIAL_ADMIN_PASSWORD` | choose a strong password |
-| `LEARNHOUSE_SQL_CONNECTION_STRING` | from DO Managed PostgreSQL console — use `postgresql+asyncpg://` scheme |
-| `LEARNHOUSE_REDIS_CONNECTION_STRING` | from DO Managed Redis console — use `rediss://` if TLS enabled |
-
-Then start the app:
-
-```bash
-cd /opt/learnhouse && docker compose up -d
-```
+**After setup:**
+- Change the admin password at `https://yourdomain.com/login`
+- Delete your temporary GitHub PAT at github.com/settings/tokens
+- Configure email, S3, AI, etc. in `/opt/learnhouse/.env`, then `docker compose -f /opt/learnhouse/docker-compose.yml up -d`
 
 ## Automatic deploys
 
-Every push to the `prod` branch of the main repo triggers a GitHub Actions workflow that:
-1. Builds and pushes a new image to GHCR
-2. SSHes into the droplet and runs `deploy.sh`
+Every push to the `prod` branch builds a new image and deploys to the droplet automatically.
 
-Required GitHub secrets on the main repo:
+Required secrets in the main GitHub repo (`Settings → Secrets → Actions`):
 
 | Secret | Value |
 |---|---|
 | `DROPLET_HOST` | Droplet IP address |
-| `DROPLET_USER` | `root` (or deploy user) |
-| `DROPLET_SSH_KEY` | Private SSH key for the droplet |
-| `PROD_ENV_FILE` | Full contents of your `.env` file (optional — keeps secrets in sync) |
+| `DROPLET_USER` | `root` |
+| `DROPLET_SSH_KEY` | Private SSH key (`ssh-keygen -t ed25519 -f ~/.ssh/learnhouse_deploy`) |
 
-## Updating config
+The deploy job uses `GITHUB_TOKEN` to pull from GHCR — no credentials stored on the droplet.
 
-To change `docker-compose.yml`, `Caddyfile`, or `deploy.sh`: commit to this repo. The next deploy will `git pull` and pick up the changes automatically.
+## Key env vars
+
+| Variable | Notes |
+|---|---|
+| `NEXT_PUBLIC_LEARNHOUSE_API_URL` | Public URL for browser-side API calls |
+| `LEARNHOUSE_INTERNAL_API_URL` | Internal URL for server-side API calls — must be `http://localhost/api/v1/` to avoid TLS loop through Caddy |
+| `LEARNHOUSE_SQL_CONNECTION_STRING` | Use `postgresql+psycopg2://` scheme (app uses sync SQLAlchemy) |
+| `LEARNHOUSE_REDIS_CONNECTION_STRING` | Use `redis://redis:6379/learnhouse` for local, `rediss://` for managed Redis |
+
+## Manual operations
+
+```bash
+# View logs
+docker compose -f /opt/learnhouse/docker-compose.yml logs -f learnhouse
+
+# Restart
+docker compose -f /opt/learnhouse/docker-compose.yml up -d
+
+# Update domain
+sed -i 's/old.domain.com/new.domain.com/' /etc/caddy/Caddyfile
+sed -i 's/old.domain.com/new.domain.com/g' /opt/learnhouse/.env
+systemctl reload caddy
+docker compose -f /opt/learnhouse/docker-compose.yml up -d
+```
