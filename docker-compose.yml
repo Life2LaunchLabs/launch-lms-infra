@@ -5,6 +5,8 @@ services:
     ports:
       - "127.0.0.1:8080:80"
     env_file: .env
+    volumes:
+      - content_data:/app/api/content
     depends_on:
       db:
         condition: service_healthy
@@ -41,3 +43,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  content_data:
