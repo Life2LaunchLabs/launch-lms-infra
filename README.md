@@ -1,11 +1,11 @@
-# learnhouse-infra
+# launch-lms-infra
 
-Deployment infrastructure for LearnHouse on a DigitalOcean Droplet.
+Deployment infrastructure for Launch LMS on a DigitalOcean Droplet.
 
 ## Architecture
 
 - **Caddy** — TLS termination, reverse proxy (ports 80/443 on host)
-- **LearnHouse container** — Next.js + FastAPI + Hocuspocus + internal Nginx, bound to `127.0.0.1:8080`
+- **Launch LMS container** — Next.js + FastAPI + Hocuspocus + internal Nginx, bound to `127.0.0.1:8080`
 - **PostgreSQL** — pgvector:pg16, data persisted in Docker volume
 - **Redis** — redis:7-alpine with AOF persistence
 
@@ -30,7 +30,7 @@ All containers run via Docker Compose. Caddy auto-provisions TLS via Let's Encry
 
 **Run:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Life2LaunchLabs/learnhouse-infra/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Life2LaunchLabs/launch-lms-infra/main/setup.sh | bash
 ```
 
 The script prompts for your domain and GitHub credentials, generates all secrets, and starts the app. Initial admin login is printed at the end.
@@ -38,11 +38,11 @@ The script prompts for your domain and GitHub credentials, generates all secrets
 **After setup:**
 - Change the admin password at `https://yourdomain.com/login`
 - Delete your temporary GitHub PAT at github.com/settings/tokens
-- Configure email, S3, AI, etc. in `/opt/learnhouse/.env`, then `docker compose -f /opt/learnhouse/docker-compose.yml up -d`
+- Configure email, S3, AI, etc. in `/opt/launch-lms/.env`, then `docker compose -f /opt/launch-lms/docker-compose.yml up -d`
 
 ## Automatic deploys
 
-Every push to the `prod` branch builds a new image and deploys to the droplet automatically.
+Every push to the `prod` branch of the main repo builds a new image and deploys to the droplet automatically.
 
 Required secrets in the main GitHub repo (`Settings → Secrets → Actions`):
 
@@ -50,7 +50,7 @@ Required secrets in the main GitHub repo (`Settings → Secrets → Actions`):
 |---|---|
 | `DROPLET_HOST` | Droplet IP address |
 | `DROPLET_USER` | `root` |
-| `DROPLET_SSH_KEY` | Private SSH key (`ssh-keygen -t ed25519 -f ~/.ssh/learnhouse_deploy`) |
+| `DROPLET_SSH_KEY` | Private SSH key (`ssh-keygen -t ed25519 -f ~/.ssh/launchlms_deploy`) |
 
 The deploy job uses `GITHUB_TOKEN` to pull from GHCR — no credentials stored on the droplet.
 
@@ -58,23 +58,24 @@ The deploy job uses `GITHUB_TOKEN` to pull from GHCR — no credentials stored o
 
 | Variable | Notes |
 |---|---|
-| `NEXT_PUBLIC_LEARNHOUSE_API_URL` | Public URL for browser-side API calls |
-| `LEARNHOUSE_INTERNAL_API_URL` | Internal URL for server-side API calls — must be `http://localhost/api/v1/` to avoid TLS loop through Caddy |
-| `LEARNHOUSE_SQL_CONNECTION_STRING` | Use `postgresql+psycopg2://` scheme (app uses sync SQLAlchemy) |
-| `LEARNHOUSE_REDIS_CONNECTION_STRING` | Use `redis://redis:6379/learnhouse` for local, `rediss://` for managed Redis |
+| `NEXT_PUBLIC_LAUNCHLMS_API_URL` | Public URL for browser-side API calls |
+| `LAUNCHLMS_INTERNAL_API_URL` | Internal URL for server-side API calls — must be `http://localhost/api/v1/` to avoid TLS loop through Caddy |
+| `LAUNCHLMS_SQL_CONNECTION_STRING` | Use `postgresql+psycopg2://` scheme (app uses sync SQLAlchemy) |
+| `LAUNCHLMS_REDIS_CONNECTION_STRING` | Use `redis://redis:6379/launchlms` for local, `rediss://` for managed Redis |
+| `COLLAB_INTERNAL_KEY` | Shared secret between the API and the Hocuspocus collab server |
 
 ## Manual operations
 
 ```bash
 # View logs
-docker compose -f /opt/learnhouse/docker-compose.yml logs -f learnhouse
+docker compose -f /opt/launch-lms/docker-compose.yml logs -f launch-lms
 
 # Restart
-docker compose -f /opt/learnhouse/docker-compose.yml up -d
+docker compose -f /opt/launch-lms/docker-compose.yml up -d
 
 # Update domain
 sed -i 's/old.domain.com/new.domain.com/' /etc/caddy/Caddyfile
-sed -i 's/old.domain.com/new.domain.com/g' /opt/learnhouse/.env
+sed -i 's/old.domain.com/new.domain.com/g' /opt/launch-lms/.env
 systemctl reload caddy
-docker compose -f /opt/learnhouse/docker-compose.yml up -d
+docker compose -f /opt/launch-lms/docker-compose.yml up -d
 ```

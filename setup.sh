@@ -1,9 +1,9 @@
 #!/bin/bash
-# Bootstrap a fresh DigitalOcean droplet for LearnHouse.
-# Run once as root: curl -fsSL https://raw.githubusercontent.com/Life2LaunchLabs/learnhouse-infra/main/setup.sh | bash
+# Bootstrap a fresh DigitalOcean droplet for Launch LMS.
+# Run once as root: curl -fsSL https://raw.githubusercontent.com/Life2LaunchLabs/launch-lms-infra/main/setup.sh | bash
 set -e
 
-DEPLOY_DIR=/opt/learnhouse
+DEPLOY_DIR=/opt/launch-lms
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -27,7 +27,7 @@ gen_secret() {
 # ── Gather inputs ─────────────────────────────────────────────────────────────
 
 echo ""
-echo "LearnHouse Droplet Setup"
+echo "Launch LMS Droplet Setup"
 echo "========================"
 echo ""
 
@@ -54,7 +54,6 @@ echo "==> Generating secrets..."
 POSTGRES_PASSWORD=$(gen_secret)
 JWT_SECRET=$(gen_secret)
 COLLAB_KEY=$(gen_secret)
-NEXTAUTH_SECRET=$(gen_secret)
 
 # ── Install Docker ─────────────────────────────────────────────────────────────
 
@@ -73,7 +72,7 @@ apt-get update && apt-get install -y caddy
 # ── Clone infra repo ───────────────────────────────────────────────────────────
 
 echo "==> Cloning infra repo..."
-git clone https://github.com/Life2LaunchLabs/learnhouse-infra "$DEPLOY_DIR"
+git clone https://github.com/Life2LaunchLabs/launch-lms-infra "$DEPLOY_DIR"
 
 # ── Configure Caddy ───────────────────────────────────────────────────────────
 
@@ -88,74 +87,72 @@ systemctl reload caddy
 echo "==> Writing .env..."
 cat > "$DEPLOY_DIR/.env" <<EOF
 # ── Site ──────────────────────────────────────────────
-LEARNHOUSE_SITE_NAME=LearnHouse
-LEARNHOUSE_SITE_DESCRIPTION=
-LEARNHOUSE_CONTACT_EMAIL=
+LAUNCHLMS_SITE_NAME=Launch LMS
+LAUNCHLMS_SITE_DESCRIPTION=
+LAUNCHLMS_CONTACT_EMAIL=
 
 # ── Hosting ───────────────────────────────────────────
-LEARNHOUSE_DOMAIN=${DOMAIN}
-LEARNHOUSE_FRONTEND_DOMAIN=${DOMAIN}
-LEARNHOUSE_SSL=false
-LEARNHOUSE_PORT=9000
-LEARNHOUSE_USE_DEFAULT_ORG=true
-LEARNHOUSE_SELF_HOSTED=true
-LEARNHOUSE_ALLOWED_ORIGINS=https://${DOMAIN}
-LEARNHOUSE_ALLOWED_REGEXP=https://${DOMAIN//./\\.}
-LEARNHOUSE_COOKIE_DOMAIN=${DOMAIN}
-LEARNHOUSE_ENV=prod
+LAUNCHLMS_DOMAIN=${DOMAIN}
+LAUNCHLMS_FRONTEND_DOMAIN=${DOMAIN}
+LAUNCHLMS_SSL=false
+LAUNCHLMS_PORT=9000
+LAUNCHLMS_USE_DEFAULT_ORG=true
+LAUNCHLMS_SELF_HOSTED=true
+LAUNCHLMS_ALLOWED_ORIGINS=https://${DOMAIN}
+LAUNCHLMS_ALLOWED_REGEXP=https://${DOMAIN//./\\.}
+LAUNCHLMS_COOKIE_DOMAIN=${DOMAIN}
+LAUNCHLMS_ENV=prod
 
 # ── Frontend ──────────────────────────────────────────
-NEXT_PUBLIC_LEARNHOUSE_DOMAIN=${DOMAIN}
-NEXT_PUBLIC_LEARNHOUSE_API_URL=https://${DOMAIN}/api/v1/
-NEXT_PUBLIC_LEARNHOUSE_BACKEND_URL=https://${DOMAIN}/
-LEARNHOUSE_INTERNAL_API_URL=http://localhost/api/v1/
-NEXT_PUBLIC_LEARNHOUSE_HTTPS=true
-NEXT_PUBLIC_LEARNHOUSE_MULTI_ORG=false
-NEXT_PUBLIC_LEARNHOUSE_DEFAULT_ORG=
-NEXTAUTH_URL=https://${DOMAIN}
-NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+NEXT_PUBLIC_LAUNCHLMS_DOMAIN=${DOMAIN}
+NEXT_PUBLIC_LAUNCHLMS_API_URL=https://${DOMAIN}/api/v1/
+NEXT_PUBLIC_LAUNCHLMS_BACKEND_URL=https://${DOMAIN}/
+LAUNCHLMS_INTERNAL_API_URL=http://localhost/api/v1/
+NEXT_PUBLIC_LAUNCHLMS_HTTPS=true
+NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG=
+NEXT_PUBLIC_COLLAB_URL=wss://${DOMAIN}/collab
 
 # ── Security ──────────────────────────────────────────
-LEARNHOUSE_AUTH_JWT_SECRET_KEY=${JWT_SECRET}
+LAUNCHLMS_AUTH_JWT_SECRET_KEY=${JWT_SECRET}
 COLLAB_INTERNAL_KEY=${COLLAB_KEY}
-LEARNHOUSE_INITIAL_ADMIN_EMAIL=admin@${DOMAIN}
-LEARNHOUSE_INITIAL_ADMIN_PASSWORD=changeme
+LAUNCHLMS_INITIAL_ADMIN_EMAIL=admin@${DOMAIN}
+LAUNCHLMS_INITIAL_ADMIN_PASSWORD=changeme
 
 # ── Database ──────────────────────────────────────────
-LEARNHOUSE_SQL_CONNECTION_STRING=postgresql+psycopg2://learnhouse:${POSTGRES_PASSWORD}@db:5432/learnhouse
+LAUNCHLMS_SQL_CONNECTION_STRING=postgresql+psycopg2://launchlms:${POSTGRES_PASSWORD}@db:5432/launchlms
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 
 # ── Redis ─────────────────────────────────────────────
-LEARNHOUSE_REDIS_CONNECTION_STRING=redis://redis:6379/learnhouse
+LAUNCHLMS_REDIS_CONNECTION_STRING=redis://redis:6379/launchlms
 
 # ── Email (configure when ready) ──────────────────────
-LEARNHOUSE_EMAIL_PROVIDER=resend
-LEARNHOUSE_SYSTEM_EMAIL_ADDRESS=
-LEARNHOUSE_RESEND_API_KEY=
+LAUNCHLMS_EMAIL_PROVIDER=resend
+LAUNCHLMS_SYSTEM_EMAIL_ADDRESS=
+LAUNCHLMS_RESEND_API_KEY=
 
 # ── Content delivery (filesystem until ready for S3) ──
-LEARNHOUSE_CONTENT_DELIVERY_TYPE=filesystem
-LEARNHOUSE_S3_API_BUCKET_NAME=
-LEARNHOUSE_S3_API_ENDPOINT_URL=
+LAUNCHLMS_CONTENT_DELIVERY_TYPE=filesystem
+LAUNCHLMS_S3_API_BUCKET_NAME=
+LAUNCHLMS_S3_API_ENDPOINT_URL=
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 
 # ── AI (optional — add key to enable) ─────────────────
-LEARNHOUSE_IS_AI_ENABLED=false
-LEARNHOUSE_GEMINI_API_KEY=
+LAUNCHLMS_IS_AI_ENABLED=false
+LAUNCHLMS_GEMINI_API_KEY=
 
 # ── Payments (optional) ───────────────────────────────
-LEARNHOUSE_STRIPE_SECRET_KEY=
-LEARNHOUSE_STRIPE_PUBLISHABLE_KEY=
-LEARNHOUSE_STRIPE_WEBHOOK_STANDARD_SECRET=
-LEARNHOUSE_STRIPE_WEBHOOK_CONNECT_SECRET=
+LAUNCHLMS_STRIPE_SECRET_KEY=
+LAUNCHLMS_STRIPE_PUBLISHABLE_KEY=
+LAUNCHLMS_STRIPE_WEBHOOK_STANDARD_SECRET=
+LAUNCHLMS_STRIPE_WEBHOOK_CONNECT_SECRET=
 EOF
 
 chmod 600 "$DEPLOY_DIR/.env"
 
 # ── Pull image and logout ─────────────────────────────────────────────────────
 
-echo "==> Pulling LearnHouse image..."
+echo "==> Pulling Launch LMS image..."
 echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" pull
 docker logout ghcr.io
@@ -169,7 +166,7 @@ docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d
 
 echo ""
 echo "================================================================"
-echo " LearnHouse is starting at https://${DOMAIN}"
+echo " Launch LMS is starting at https://${DOMAIN}"
 echo "================================================================"
 echo ""
 echo " Initial admin password: changeme"
