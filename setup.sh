@@ -40,12 +40,6 @@ DOMAIN="${DOMAIN:-$SSLIP_DOMAIN}"
 echo ""
 echo "--- GitHub (for image pull) ---"
 prompt GHCR_USER "GitHub username"
-echo ""
-echo "Create a short-lived PAT (7 days) with read:packages scope at:"
-echo "  https://github.com/settings/tokens/new"
-echo "Delete it once setup is complete."
-echo ""
-prompt GHCR_PAT "GitHub PAT (temporary)" true
 
 # ── Auto-generate secrets ─────────────────────────────────────────────────────
 
@@ -152,7 +146,13 @@ chmod 600 "$DEPLOY_DIR/.env"
 
 # ── Pull image and logout ─────────────────────────────────────────────────────
 
+echo ""
+echo "Create a short-lived PAT (7 days) with read:packages scope at:"
+echo "  https://github.com/settings/tokens/new"
+echo "Delete it once setup is complete."
+echo ""
 echo "==> Pulling Launch LMS image..."
+prompt GHCR_PAT "GitHub PAT (temporary)" true
 echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" pull
 docker logout ghcr.io
