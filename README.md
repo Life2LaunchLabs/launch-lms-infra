@@ -49,10 +49,25 @@ Required secrets in the main GitHub repo (`Settings → Secrets → Actions`):
 | Secret | Value |
 |---|---|
 | `DROPLET_HOST` | Droplet IP address |
-| `DROPLET_USER` | `root` |
-| `DROPLET_SSH_KEY` | Private SSH key (`ssh-keygen -t ed25519 -f ~/.ssh/launchlms_deploy`) |
+| `DROPLET_USER` | SSH user on the droplet, usually `root` |
+| `DROPLET_SSH_KEY` | Private key contents for a deploy-only SSH key |
 
-The deploy job uses `GITHUB_TOKEN` to pull from GHCR — no credentials stored on the droplet.
+SSH setup:
+
+1. Generate a new key pair on your local machine:
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/launchlms_deploy
+   ```
+2. Add the public key to the droplet:
+    ```bash
+    ssh-copy-id -i ~/.ssh/launchlms_deploy.pub root@your_droplet_ip
+    ```
+    Or append `~/.ssh/launchlms_deploy.pub` to `~/.ssh/authorized_keys` for your deploy user.
+3. Add the private key to GitHub as DROPLET_SSH_KEY:
+    ```bash
+    cat ~/.ssh/launchlms_deploy
+    ```
+The deploy job uses GITHUB_TOKEN to pull from GHCR, so no registry credentials are stored on the droplet.
 
 ## Key env vars
 
