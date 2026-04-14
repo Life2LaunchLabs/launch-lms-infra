@@ -159,8 +159,14 @@ docker logout ghcr.io
 
 # ── Start ─────────────────────────────────────────────────────────────────────
 
-echo "==> Starting services..."
-docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d
+echo "==> Starting database and redis..."
+docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d db redis
+
+echo "==> Running database migrations..."
+docker compose -f "$DEPLOY_DIR/docker-compose.yml" run --rm migrate
+
+echo "==> Starting Launch LMS..."
+docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d launch-lms
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 

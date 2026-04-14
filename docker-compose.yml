@@ -13,6 +13,18 @@ services:
       redis:
         condition: service_healthy
 
+  migrate:
+    image: ghcr.io/life2launchlabs/launch-lms:prod
+    restart: "no"
+    env_file: .env
+    volumes:
+      - content_data:/app/api/content
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -lc "cd /app/api && uv run alembic upgrade head"
+
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped

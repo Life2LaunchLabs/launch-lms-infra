@@ -16,7 +16,7 @@ All containers run via Docker Compose. Caddy auto-provisions TLS via Let's Encry
 | File | Purpose |
 |---|---|
 | `setup.sh` | Bootstrap a fresh droplet — installs Docker, Caddy, pulls image, starts everything |
-| `deploy.sh` | Called by GitHub Actions on every push to `prod` |
+| `deploy.sh` | Pulls the latest image, runs migrations, then restarts the app |
 | `docker-compose.yml` | All services |
 | `Caddyfile` | Reverse proxy config — edit domain here after setup |
 | `.env.example` | All supported config variables |
@@ -43,6 +43,15 @@ The script prompts for your domain and GitHub credentials, generates all secrets
 ## Automatic deploys
 
 Every push to the `prod` branch of the main repo builds a new image and deploys to the droplet automatically.
+The production deploy flow is:
+
+1. Pull the latest infra repo changes on the droplet
+2. Pull the new `ghcr.io/life2launchlabs/launch-lms:prod` image
+3. Start `db` and `redis`
+4. Run `docker compose run --rm migrate`
+5. Restart `launch-lms`
+
+If migrations fail, the running app is not restarted onto the new image.
 
 Required secrets in the main GitHub repo (`Settings → Secrets → Actions`):
 
@@ -84,6 +93,9 @@ The deploy job uses GITHUB_TOKEN to pull from GHCR, so no registry credentials a
 ```bash
 # View logs
 docker compose -f /opt/launch-lms/docker-compose.yml logs -f launch-lms
+
+# Run migrations manually
+docker compose -f /opt/launch-lms/docker-compose.yml run --rm migrate
 
 # Restart
 docker compose -f /opt/launch-lms/docker-compose.yml up -d
