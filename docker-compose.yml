@@ -23,7 +23,7 @@ services:
       db:
         condition: service_healthy
     command: >
-      sh -lc "cd /app/api && uv run alembic upgrade head"
+      sh -lc "cd /app/api && ./scripts/run_alembic_migrations.sh"
 
   db:
     image: pgvector/pgvector:pg16
