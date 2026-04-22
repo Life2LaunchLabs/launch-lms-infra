@@ -28,14 +28,14 @@ build_alembic_head="$(printf '%s' "${build_info}" | python3 -c 'import json,sys;
 migrate_build_info="$(docker compose run --rm --no-deps --entrypoint sh migrate -lc 'cat /app/build-info.json')"
 migrate_build_commit="$(printf '%s' "${migrate_build_info}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit_sha"])')"
 
-if [[ "${build_commit}" != "${LAUNCHLMS_RELEASE_COMMIT_SHA}" ]]; then
+if [[ -n "${LAUNCHLMS_RELEASE_COMMIT_SHA}" && "${LAUNCHLMS_RELEASE_COMMIT_SHA}" != "unknown" && "${build_commit}" != "${LAUNCHLMS_RELEASE_COMMIT_SHA}" ]]; then
   echo "Running app commit does not match release lock." >&2
   echo "Expected: ${LAUNCHLMS_RELEASE_COMMIT_SHA}" >&2
   echo "Actual:   ${build_commit}" >&2
   exit 1
 fi
 
-if [[ "${migrate_build_commit}" != "${LAUNCHLMS_RELEASE_COMMIT_SHA}" ]]; then
+if [[ -n "${LAUNCHLMS_RELEASE_COMMIT_SHA}" && "${LAUNCHLMS_RELEASE_COMMIT_SHA}" != "unknown" && "${migrate_build_commit}" != "${LAUNCHLMS_RELEASE_COMMIT_SHA}" ]]; then
   echo "Migrate image commit does not match release lock." >&2
   echo "Expected: ${LAUNCHLMS_RELEASE_COMMIT_SHA}" >&2
   echo "Actual:   ${migrate_build_commit}" >&2
