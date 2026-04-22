@@ -33,6 +33,7 @@ else
 EOF
   exit 1
 fi
+docker compose rm -sf launch-lms || true
 docker compose up -d --remove-orphans launch-lms caddy
 "${DEPLOY_DIR}/scripts/verify-deploy.sh"
 

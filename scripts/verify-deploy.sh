@@ -9,25 +9,9 @@ source "${SCRIPT_DIR}/load-release-env.sh"
 cd "${DEPLOY_DIR}"
 
 expected_image="${LAUNCHLMS_IMAGE}"
-configured_launch_image="$(docker compose config --images launch-lms | tail -n 1)"
-configured_migrate_image="$(docker compose config --images migrate | tail -n 1)"
 launch_container_id="$(docker compose ps -q launch-lms)"
 db_container_id="$(docker compose ps -q db)"
 redis_container_id="$(docker compose ps -q redis)"
-
-if [[ "${configured_launch_image}" != "${expected_image}" ]]; then
-  echo "Configured launch-lms image does not match release lock." >&2
-  echo "Expected: ${expected_image}" >&2
-  echo "Actual:   ${configured_launch_image}" >&2
-  exit 1
-fi
-
-if [[ "${configured_migrate_image}" != "${expected_image}" ]]; then
-  echo "Configured migrate image does not match release lock." >&2
-  echo "Expected: ${expected_image}" >&2
-  echo "Actual:   ${configured_migrate_image}" >&2
-  exit 1
-fi
 
 running_ref="$(docker inspect --format '{{.Config.Image}}' "${launch_container_id}")"
 if [[ "${running_ref}" != "${expected_image}" ]]; then
@@ -41,11 +25,20 @@ build_info="$(docker compose exec -T launch-lms sh -lc 'cat /app/build-info.json
 build_version="$(printf '%s' "${build_info}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
 build_commit="$(printf '%s' "${build_info}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit_sha"])')"
 build_alembic_head="$(printf '%s' "${build_info}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["alembic_head"])')"
+migrate_build_info="$(docker compose run --rm --no-deps --entrypoint sh migrate -lc 'cat /app/build-info.json')"
+migrate_build_commit="$(printf '%s' "${migrate_build_info}" | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit_sha"])')"
 
 if [[ "${build_commit}" != "${LAUNCHLMS_RELEASE_COMMIT_SHA}" ]]; then
   echo "Running app commit does not match release lock." >&2
   echo "Expected: ${LAUNCHLMS_RELEASE_COMMIT_SHA}" >&2
   echo "Actual:   ${build_commit}" >&2
+  exit 1
+fi
+
+if [[ "${migrate_build_commit}" != "${LAUNCHLMS_RELEASE_COMMIT_SHA}" ]]; then
+  echo "Migrate image commit does not match release lock." >&2
+  echo "Expected: ${LAUNCHLMS_RELEASE_COMMIT_SHA}" >&2
+  echo "Actual:   ${migrate_build_commit}" >&2
   exit 1
 fi
 

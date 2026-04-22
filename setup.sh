@@ -174,6 +174,7 @@ echo "==> Running database migrations..."
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" run --rm migrate
 
 echo "==> Starting all services..."
+docker compose -f "$DEPLOY_DIR/docker-compose.yml" rm -sf launch-lms || true
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d launch-lms caddy
 "$DEPLOY_DIR/scripts/verify-deploy.sh"
 
