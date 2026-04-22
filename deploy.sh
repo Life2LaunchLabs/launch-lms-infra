@@ -5,6 +5,13 @@ set -euo pipefail
 
 DEPLOY_DIR=/opt/launch-lms
 STATE_DIR="${DEPLOY_DIR}/.deploy-state"
+LOCK_FILE="${DEPLOY_DIR}/.deploy.lock"
+
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "Another deploy is already running. Exiting."
+  exit 1
+fi
 
 cd "$DEPLOY_DIR"
 git fetch origin
