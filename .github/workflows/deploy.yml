@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -14,4 +18,7 @@ jobs:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
-          script: bash /opt/launch-lms/deploy.sh
+          script: |
+            export GHCR_USERNAME="${{ github.actor }}"
+            export GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            bash /opt/launch-lms/deploy.sh

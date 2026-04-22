@@ -76,7 +76,7 @@ SSH setup:
     ```bash
     cat ~/.ssh/launchlms_deploy
     ```
-The deploy job uses GITHUB_TOKEN to pull from GHCR, so no registry credentials are stored on the droplet.
+The deploy job uses the workflow's `GITHUB_TOKEN` to authenticate to GHCR during the remote deploy. To make that work, grant `Life2LaunchLabs/launch-lms-infra` read access under the `launch-lms` package's `Manage Actions access` settings in GitHub Packages.
 
 ## Key env vars
 
