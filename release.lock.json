@@ -1,9 +1,9 @@
 {
   "image_repository": "ghcr.io/life2launchlabs/launch-lms",
-  "image_tag": "v0.1.0",
+  "image_tag": "v0.1.1",
   "image_digest": null,
-  "image_ref": "ghcr.io/life2launchlabs/launch-lms:v0.1.0",
-  "version": "v0.1.0",
+  "image_ref": "ghcr.io/life2launchlabs/launch-lms:v0.1.1",
+  "version": "v0.1.1",
   "commit_sha": "unknown",
   "released_at": "unknown",
   "source_branch": "main"
