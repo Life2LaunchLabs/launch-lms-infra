@@ -82,7 +82,7 @@ The deploy job uses the workflow's `GITHUB_TOKEN` to authenticate to GHCR during
 
 | Variable | Notes |
 |---|---|
-| `NEXT_PUBLIC_LAUNCHLMS_API_URL` | Public URL for browser-side API calls |
+| `NEXT_PUBLIC_LAUNCHLMS_API_URL` | Leave blank for same-origin browser API calls in subdomain deployments; set only for split frontend/backend deployments |
 | `LAUNCHLMS_INTERNAL_API_URL` | Internal URL for server-side API calls — must be `http://localhost/api/v1/` to avoid TLS loop through Caddy |
 | `LAUNCHLMS_SQL_CONNECTION_STRING` | Use `postgresql+psycopg2://` scheme (app uses sync SQLAlchemy) |
 | `LAUNCHLMS_REDIS_CONNECTION_STRING` | Use `redis://redis:6379/launchlms` for local, `rediss://` for managed Redis |
