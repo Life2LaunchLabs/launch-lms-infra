@@ -1,9 +1,25 @@
 services:
+  caddy:
+    build:
+      context: .
+      dockerfile: caddy.Dockerfile
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile.active:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DO_AUTH_TOKEN: ${DO_AUTH_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - launch-lms
+
   launch-lms:
     image: ghcr.io/life2launchlabs/launch-lms:prod
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:80"
     env_file: .env
     volumes:
       - content_data:/app/api/content
@@ -56,3 +72,5 @@ volumes:
   pgdata:
   redisdata:
   content_data:
+  caddy_data:
+  caddy_config:

@@ -5,6 +5,14 @@ set -e
 
 DEPLOY_DIR=/opt/launch-lms
 
+# ── Guards ────────────────────────────────────────────────────────────────────
+
+if [[ -f "$DEPLOY_DIR/.env" ]]; then
+  echo "Existing deployment detected at $DEPLOY_DIR."
+  echo "To apply infra changes, run: $DEPLOY_DIR/deploy.sh"
+  exit 1
+fi
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 prompt() {
@@ -55,55 +63,20 @@ POSTGRES_PASSWORD=$(gen_secret)
 JWT_SECRET=$(gen_secret)
 COLLAB_KEY=$(gen_secret)
 
-# ── System packages ───────────────────────────────────────────────────────────
-
-echo "==> Installing system packages..."
-apt-get update -q
-apt-get install -y -q git curl golang-go debian-keyring debian-archive-keyring apt-transport-https
-
 # ── Install Docker ────────────────────────────────────────────────────────────
 
 echo "==> Installing Docker..."
+apt-get update -q
+apt-get install -y -q git curl
 curl -fsSL https://get.docker.com | sh
 apt-get install -y docker-compose-plugin
 systemctl enable docker
 systemctl start docker
 
-# ── Install Caddy with DigitalOcean DNS plugin ────────────────────────────────
-
-echo "==> Installing Caddy base package (for systemd service)..."
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
-apt-get update -q && apt-get install -y caddy
-
-echo "==> Building Caddy with DigitalOcean DNS plugin..."
-go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
-"$(go env GOPATH)/bin/xcaddy" build --with github.com/caddy-dns/digitalocean --output /usr/bin/caddy
-
-echo "==> Configuring Caddy environment..."
-cat > /etc/caddy/caddy.env <<EOF
-DO_AUTH_TOKEN=${DO_AUTH_TOKEN}
-EOF
-chmod 600 /etc/caddy/caddy.env
-
-mkdir -p /etc/systemd/system/caddy.service.d
-cat > /etc/systemd/system/caddy.service.d/override.conf <<EOF
-[Service]
-EnvironmentFile=/etc/caddy/caddy.env
-EOF
-systemctl daemon-reload
-
 # ── Clone infra repo ──────────────────────────────────────────────────────────
 
 echo "==> Cloning infra repo..."
 git clone https://github.com/Life2LaunchLabs/launch-lms-infra "$DEPLOY_DIR"
-
-# ── Configure and start Caddy ─────────────────────────────────────────────────
-
-echo "==> Configuring Caddy..."
-sed "s/your.domain.com/$DOMAIN/g" "$DEPLOY_DIR/Caddyfile" > /etc/caddy/Caddyfile
-systemctl enable caddy
-systemctl restart caddy
 
 # ── Write .env ────────────────────────────────────────────────────────────────
 
@@ -148,6 +121,9 @@ POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 # ── Redis ─────────────────────────────────────────────
 LAUNCHLMS_REDIS_CONNECTION_STRING=redis://redis:6379/launchlms
 
+# ── DigitalOcean DNS (Caddy wildcard TLS) ─────────────
+DO_AUTH_TOKEN=${DO_AUTH_TOKEN}
+
 # ── Email (configure when ready) ──────────────────────
 LAUNCHLMS_EMAIL_PROVIDER=resend
 LAUNCHLMS_SYSTEM_EMAIL_ADDRESS=
@@ -173,7 +149,11 @@ EOF
 
 chmod 600 "$DEPLOY_DIR/.env"
 
-# ── Pull image ────────────────────────────────────────────────────────────────
+# ── Generate processed Caddyfile ──────────────────────────────────────────────
+
+sed "s/your.domain.com/$DOMAIN/g" "$DEPLOY_DIR/Caddyfile" > "$DEPLOY_DIR/Caddyfile.active"
+
+# ── Pull image and start ──────────────────────────────────────────────────────
 
 echo ""
 echo "Create a short-lived PAT (7 days) with read:packages scope at:"
@@ -185,16 +165,14 @@ echo "$GHCR_PAT" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" pull
 docker logout ghcr.io
 
-# ── Start services ────────────────────────────────────────────────────────────
-
 echo "==> Starting database and redis..."
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d db redis
 
 echo "==> Running database migrations..."
 docker compose -f "$DEPLOY_DIR/docker-compose.yml" run --rm migrate
 
-echo "==> Starting Launch LMS..."
-docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d launch-lms
+echo "==> Starting all services..."
+docker compose -f "$DEPLOY_DIR/docker-compose.yml" up -d --build
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
