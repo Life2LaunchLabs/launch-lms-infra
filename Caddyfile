@@ -1,4 +1,7 @@
-your.domain.com {
+your.domain.com, *.your.domain.com {
+    tls {
+        dns digitalocean {env.DO_AUTH_TOKEN}
+    }
     request_body {
         max_size 500MB
     }
