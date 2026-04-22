@@ -18,7 +18,7 @@ services:
       - launch-lms
 
   launch-lms:
-    image: ghcr.io/life2launchlabs/launch-lms:prod
+    image: ${LAUNCHLMS_IMAGE}
     restart: unless-stopped
     env_file: .env
     volumes:
@@ -30,7 +30,7 @@ services:
         condition: service_healthy
 
   migrate:
-    image: ghcr.io/life2launchlabs/launch-lms:prod
+    image: ${LAUNCHLMS_IMAGE}
     restart: "no"
     env_file: .env
     volumes:

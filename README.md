@@ -16,8 +16,11 @@ All containers run via Docker Compose. Caddy auto-provisions TLS via Let's Encry
 | File | Purpose |
 |---|---|
 | `setup.sh` | Bootstrap a fresh droplet — installs Docker, Caddy, pulls image, starts everything |
-| `deploy.sh` | Pulls the latest image, runs migrations, then restarts the app |
+| `deploy.sh` | Pulls the pinned release image, runs migrations, verifies the deploy, then restarts the app |
 | `docker-compose.yml` | All services |
+| `release.lock.json` | Checked-in production release contract containing the pinned image ref, version, and commit |
+| `scripts/verify-deploy.sh` | Verifies running image, build metadata, Alembic head, and service health |
+| `scripts/repair.sh` | Safe repair entrypoint for rerunning migrations or restarting the pinned app image |
 | `Caddyfile` | Reverse proxy config — edit domain here after setup |
 | `.env.example` | All supported config variables |
 
@@ -42,18 +45,16 @@ The script prompts for your domain and GitHub credentials, generates all secrets
 
 ## Automatic deploys
 
-Every push to the `prod` branch of the main repo builds a new image and deploys to the droplet automatically.
-The production deploy flow is:
+Production deploys are now infra-authoritative and lock-driven.
 
-1. Pull the latest infra repo changes on the droplet
-2. Pull the new `ghcr.io/life2launchlabs/launch-lms:prod` image
-3. Start `db` and `redis`
-4. Run `docker compose run --rm migrate`
-5. Restart `launch-lms`
+1. The app repo publishes a new release image and opens a PR against this repo updating `release.lock.json`.
+2. Merging that PR into `main` authorizes the production rollout.
+3. This repo's deploy workflow SSHes into the droplet and runs `/opt/launch-lms/deploy.sh`.
+4. The droplet pulls the exact pinned image, runs `migrate`, starts `launch-lms`, then runs `scripts/verify-deploy.sh`.
 
 If migrations fail, the running app is not restarted onto the new image.
 
-Required secrets in the main GitHub repo (`Settings → Secrets → Actions`):
+Required secrets in this infra repo (`Settings → Secrets → Actions`):
 
 | Secret | Value |
 |---|---|
@@ -94,8 +95,14 @@ The deploy job uses the workflow's `GITHUB_TOKEN` to authenticate to GHCR during
 # View logs
 docker compose -f /opt/launch-lms/docker-compose.yml logs -f launch-lms
 
-# Run migrations manually
-docker compose -f /opt/launch-lms/docker-compose.yml run --rm migrate
+# Verify the deployed release
+/opt/launch-lms/scripts/verify-deploy.sh
+
+# Rerun the pinned release migration and verify again
+/opt/launch-lms/scripts/repair.sh
+
+# Restart only the pinned app image
+/opt/launch-lms/scripts/repair.sh --restart-only
 
 # Restart
 docker compose -f /opt/launch-lms/docker-compose.yml up -d
