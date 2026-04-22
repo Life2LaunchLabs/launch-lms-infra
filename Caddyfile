@@ -5,7 +5,7 @@ your.domain.com, *.your.domain.com {
     request_body {
         max_size 500MB
     }
-    reverse_proxy localhost:8080 {
+    reverse_proxy launch-lms:80 {
         header_up X-Forwarded-Proto https
         header_up X-Real-IP {remote_host}
         transport http {
