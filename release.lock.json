@@ -1,10 +1,10 @@
 {
   "image_repository": "ghcr.io/life2launchlabs/launch-lms",
-  "image_tag": "0.1.2",
-  "image_digest": "sha256:baa78740d18c0fe4c1e83ef11cb350aa91e77262d1271d61148bcc0cd4f69086",
-  "image_ref": "ghcr.io/life2launchlabs/launch-lms@sha256:baa78740d18c0fe4c1e83ef11cb350aa91e77262d1271d61148bcc0cd4f69086",
-  "version": "0.1.2",
-  "commit_sha": "0a7de6817a8863e814602f313ff626ae893fe1e2",
-  "released_at": "2026-04-22T22:29:06.159632+00:00",
+  "image_tag": "0.1.3",
+  "image_digest": "sha256:81e6d9e784e1e9c56314dd313e221af98cee8ace89f9858039fd946aec9019cb",
+  "image_ref": "ghcr.io/life2launchlabs/launch-lms@sha256:81e6d9e784e1e9c56314dd313e221af98cee8ace89f9858039fd946aec9019cb",
+  "version": "0.1.3",
+  "commit_sha": "21345357713ca25cf09be16219b02d00817b913a",
+  "released_at": "2026-04-23T04:17:08.139296+00:00",
   "source_branch": "main"
 }
