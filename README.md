@@ -97,7 +97,10 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    Setup prompts for the domain, a separate administrator password, and DNS token.
    Unstable also prompts for the production domain (to reject nested cookie
    domains) and shared tester HTTP credentials. These are an outer access gate;
-   each tester still signs into their own Launch LMS account afterward.
+   each tester still signs into their own Launch LMS account afterward. A
+   successful tester prompt issues a secure 12-hour gate cookie shared by the
+   unstable apex and organization subdomains, leaving the Authorization header
+   available for the signed-in application's Bearer token.
 6. Setup writes private `.env`, `.deployment-environment`, and unstable lock files,
    then pulls the pinned app, starts dependencies, downloads the embedding model,
    migrates, starts the app/Caddy, verifies services, and backfills search. Secrets

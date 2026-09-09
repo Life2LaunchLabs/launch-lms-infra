@@ -4,6 +4,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -99,6 +100,25 @@ class DeploymentTests(unittest.TestCase):
             self.assertNotIn('private-hash',result)
             self.assertIn('app-key',result)
             self.assertIn('collab-key',result)
+
+    def test_unstable_gate_uses_shared_session_cookie_without_forwarding_basic_auth(self):
+        password_hash = '$2a$14$' + 'a'*53
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            shutil.copy(ROOT/'Caddyfile', path/'Caddyfile')
+            (path/'.deployment-environment').write_text('unstable\n')
+            (path/'.env').write_text(
+                'LAUNCHLMS_DOMAIN=test.example.net\n'
+                'UNSTABLE_HTTP_USER=launch_testers\n'
+                f'UNSTABLE_HTTP_PASSWORD_HASH={password_hash}\n'
+            )
+            subprocess.run([sys.executable,str(ROOT/'scripts/render-caddy.py')],cwd=path,check=True)
+            result=(path/'Caddyfile.active').read_text()
+            self.assertIn('handle @unstable_session', result)
+            self.assertIn('Domain=.test.example.net', result)
+            self.assertIn('request_header -Authorization', result)
+            self.assertEqual(2, result.count('import launch_lms_proxy'))
+            self.assertNotIn('__LAUNCHLMS_ROUTES__', result)
 
     def test_sanitizer_retains_passwords_and_rewrites_only_own_urls(self):
         from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, JSON, Boolean, select
