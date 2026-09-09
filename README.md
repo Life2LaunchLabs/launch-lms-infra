@@ -113,6 +113,70 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    checks do not prove public DNS/TLS. Log in, upload/open a file, search, and
    open a collaborative activity. Test simultaneous production/unstable sessions.
 
+## Move two GoDaddy domains to DigitalOcean DNS
+
+Use one registrable domain for production and a different one for unstable. In
+the commands and checklists below, substitute your actual values for
+`PROD_DOMAIN`, `UNSTABLE_DOMAIN`, `PROD_IP`, and `UNSTABLE_IP`.
+
+Do the unstable domain first. Its setup is reversible and does not change the
+current production site. Move the production domain only after unstable has
+passed its owner checks and you have scheduled the production domain cutover.
+
+1. In DigitalOcean, open **Networking → Domains** and add both apex domains. In
+   the production zone create `A @ → PROD_IP` and `A * → PROD_IP`. In the
+   unstable zone create `A @ → UNSTABLE_IP` and `A * → UNSTABLE_IP`. Add AAAA
+   records only when the matching droplet and firewall actually support IPv6.
+2. Before delegating an actively used domain, copy every record it needs into
+   DigitalOcean: MX, SPF/DKIM/DMARC TXT records, verification TXT records, CAA,
+   and intentional subdomains. Delegating nameservers moves authority for the
+   whole zone; GoDaddy's old zone stops answering once caches expire.
+3. In GoDaddy, open **Domain Portfolio → the domain → DNS → Nameservers**. Choose
+   **I'll use my own nameservers** and enter:
+
+   ```text
+   ns1.digitalocean.com
+   ns2.digitalocean.com
+   ns3.digitalocean.com
+   ```
+
+   Save and complete GoDaddy's identity check. Repeat for the other domain when
+   its zone is ready. GoDaddy notes that global propagation can take up to 48
+   hours; DigitalOcean says it is commonly 30 minutes to several hours.
+4. Verify delegation and address records from a machine outside the droplets:
+
+   ```bash
+   dig +short NS PROD_DOMAIN
+   dig +short A PROD_DOMAIN
+   dig +short A test-org.PROD_DOMAIN
+   dig +short NS UNSTABLE_DOMAIN
+   dig +short A UNSTABLE_DOMAIN
+   dig +short A test-org.UNSTABLE_DOMAIN
+   ```
+
+   All three DigitalOcean nameservers should appear, and apex/wildcard queries
+   should resolve to the intended environment's IP. Do not initialize Caddy
+   until the DNS token can edit these DigitalOcean zones.
+5. Initialize unstable against `UNSTABLE_DOMAIN`, complete the login/org/file/
+   search/collaboration checks, and rehearse one refresh. Its separate domain
+   prevents production cookies from being sent to the test environment.
+6. To move the existing production deployment to `PROD_DOMAIN` while retaining
+   its current image, disable the production GitHub environment, take a snapshot,
+   and follow **Migrate the existing production droplet** below. Change only the
+   domain/origin/cookie/collaboration values in `.env`; preserve the release
+   lock, database, content volume, JWT key, and other production secrets. Run
+   `bash deploy.sh`, then verify the new apex and an org subdomain before enabling
+   production automation again.
+7. Keep the old production DNS/site available until the new domain is verified.
+   The current configuration does not automatically redirect old org URLs.
+   Announce the new base domain and update OAuth callbacks, webhook destinations,
+   email links, bookmarks, and any external integration allowlists before later
+   retiring the old domain. A dual-domain redirect is a separate migration task.
+
+Official references: [DigitalOcean DNS delegation](https://docs.digitalocean.com/products/networking/dns/getting-started/dns-registrars/),
+[DigitalOcean domain setup](https://docs.digitalocean.com/products/networking/dns/getting-started/quickstart/),
+and [GoDaddy custom nameservers](https://www.godaddy.com/help/change-my-domain-nameservers-664).
+
 ## Connect GitHub Actions to each droplet
 
 Create a dedicated SSH key; install its public half for the deploy user. For
