@@ -1,0 +1,17 @@
+# The app, migrations, DB, and Redis have no external network route. Caddy and
+# Ollama alone also join egress for TLS issuance and downloading the local model.
+services:
+  caddy:
+    networks: [default, egress]
+  embeddings:
+    networks: [default, egress]
+  launch-lms:
+    environment:
+      LAUNCHLMS_AUTH_OAUTH_ENABLED: "false"
+      LAUNCHLMS_REQUIRE_EMAIL_VERIFICATION: "false"
+      LAUNCHLMS_IS_AI_ENABLED: "false"
+      LAUNCHLMS_CONTENT_DELIVERY_TYPE: filesystem
+networks:
+  default:
+    internal: true
+  egress: {}
