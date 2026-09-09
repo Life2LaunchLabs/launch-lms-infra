@@ -20,6 +20,9 @@ TLS and model downloads. Copied payment/SSO settings are cleared on refresh.
 
 Read the [app deployment guide](https://github.com/Life2LaunchLabs/launch-lms/blob/main/scripts/docs/deployment.md)
 for the feature branch → dev → unstable testing → main → version → infra PR flow.
+That guide also contains the click-by-click GitHub token, environment, package,
+SSH-key, branch-protection, and deployment-switch setup. The sections below are
+the host-side runbook and can be followed independently from a fresh terminal.
 
 ## First rollout of this pipeline
 
@@ -51,12 +54,23 @@ for the DB/content plus at least one refresh copy, and enough RAM for the app an
 CPU embeddings. Start by measuring the existing production workload; this guide
 has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are built.
 
-1. Point the environment domain's nameservers to DigitalOcean DNS. Create A
+1. In DigitalOcean, create an Ubuntu 24.04 droplet in the desired region. Add
+   your normal workstation SSH key during creation so you retain an independent
+   administration path. Record its public IPv4 address. In the cloud firewall,
+   allow TCP 80 and 443 from everywhere, UDP 443 from everywhere for HTTP/3,
+   and TCP 22 only from trusted administration/deployment sources. Do not expose
+   PostgreSQL, Redis, Ollama, or application container ports publicly.
+2. Point the environment domain's nameservers to DigitalOcean DNS. Create A
    records for `@` and `*` pointing to this droplet (and AAAA only if IPv6 is
    configured). Use a separate registrable domain for unstable. The current
    Caddy plugin is for DigitalOcean; other DNS providers need the matching plugin.
-   Open TCP 80/443 and UDP 443, and restrict SSH to your administration/deploy path.
-2. Install prerequisites and clone the repo. Run as root, or use a dedicated
+3. Connect using the key selected during droplet creation:
+
+   ```bash
+   ssh -i ~/.ssh/YOUR_ADMIN_KEY -o IdentitiesOnly=yes root@DROPLET_IP
+   ```
+
+   Install prerequisites and clone the repo. Run as root, or use a dedicated
    operator with Docker access and ownership of `/opt/launch-lms`:
    ```bash
    apt-get update
@@ -72,15 +86,20 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    clone with its SSH URL. Future deploys must be able to `git fetch origin main`
    without an interactive prompt. Clone into exactly `/opt/launch-lms`; the
    default content volume name and SSH workflow use that installation path.
-3. Prepare a DigitalOcean DNS token with the domain permissions required by Caddy.
-   It is retained on this host for certificate renewals. Prepare an initial
-   administrator email/password. Do **not** copy production's `.env` to unstable.
-4. Authenticate Docker to GHCR with a short-lived `read:packages` token. Let
+4. In the DigitalOcean control panel, open **API → Tokens/Keys → Generate New
+   Token**. Create a token that can manage DNS records for the account containing
+   this environment's zone. Copy it immediately; setup stores it only in the
+   root-readable host `.env`, and Caddy needs it later for wildcard certificate
+   renewals. This is not a Caddy-specific token and should not be added to GitHub.
+   Also prepare a unique initial administrator email/password. Do **not** copy
+   production's `.env`, JWT key, database password, or admin password to unstable.
+5. Authenticate Docker to GHCR with a short-lived classic PAT carrying
+   `read:packages`, or another token authorized to read the app package. Let
    `docker login` prompt for the token; do not put it in shell history:
    ```bash
    docker login ghcr.io -u YOUR_GITHUB_USER
    ```
-5. For **production**, the checked-out `release.lock.json` must contain the
+6. For **production**, the checked-out `release.lock.json` must contain the
    verified stable release digest from the rollout above:
    ```bash
    bash setup.sh production
@@ -89,7 +108,9 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    on your workstation, then transfer it:
    ```bash
    gh run download DEV_BUILD_RUN_ID --repo Life2LaunchLabs/launch-lms --name candidate --dir /tmp/unstable-candidate
-   scp /tmp/unstable-candidate/candidate.json root@UNSTABLE_IP:/tmp/candidate.json
+   scp -i ~/.ssh/launch-lms-actions-unstable -o IdentitiesOnly=yes \
+     /tmp/unstable-candidate/candidate.json \
+     root@UNSTABLE_IP:/tmp/candidate.json
    # On the unstable host:
    cd /opt/launch-lms
    bash setup.sh unstable /tmp/candidate.json
@@ -101,13 +122,13 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    successful tester prompt issues a secure 12-hour gate cookie shared by the
    unstable apex and organization subdomains, leaving the Authorization header
    available for the signed-in application's Bearer token.
-6. Setup writes private `.env`, `.deployment-environment`, and unstable lock files,
+7. Setup writes private `.env`, `.deployment-environment`, and unstable lock files,
    then pulls the pinned app, starts dependencies, downloads the embedding model,
    migrates, starts the app/Caddy, verifies services, and backfills search. Secrets
    are not printed. Host/DNS credentials are excluded from the generated app env.
    If setup fails after writing configuration, fix the reported issue and use
    `bash deploy.sh`; setup refuses to overwrite an existing installation.
-7. Remove the bootstrap registry login and revoke the temporary PAT:
+8. Remove the bootstrap registry login and revoke the temporary PAT:
    ```bash
    docker logout ghcr.io
    ```
@@ -116,24 +137,63 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    checks do not prove public DNS/TLS. Log in, upload/open a file, search, and
    open a collaborative activity. Test simultaneous production/unstable sessions.
 
+If registry setup fails with `unauthorized`, authenticate to `ghcr.io` with a
+token that has `read:packages` and access to the `launch-lms` package, then run
+`bash deploy.sh`. Do not rerun `setup.sh`: after it writes `.env`, its
+`Already initialized` refusal protects those secrets. If a manual Compose command
+reports `LAUNCHLMS_IMAGE` is unset, load the pinned image selection first:
+
+```bash
+cd /opt/launch-lms
+source scripts/load-release-env.sh
+docker compose ps
+```
+
+Initial `502` responses during `deploy.sh` are expected while the app becomes
+ready; the command succeeds only after its retries and full verification pass.
+For wildcard TLS, look for `certificate obtained successfully` for
+`*.ENVIRONMENT_DOMAIN` in `docker compose logs caddy`. DNS pointing at a droplet
+does not cause Caddy to serve that domain until `.env` and `Caddyfile.active`
+name it.
+
 ## Move two GoDaddy domains to DigitalOcean DNS
 
 Use one registrable domain for production and a different one for unstable. In
 the commands and checklists below, substitute your actual values for
 `PROD_DOMAIN`, `UNSTABLE_DOMAIN`, `PROD_IP`, and `UNSTABLE_IP`.
 
+For the current installation those values are:
+
+| Target | Domain | IPv4 |
+| --- | --- | --- |
+| Production | `life2launch.app` | `146.190.134.27` |
+| Unstable | `life2launch.dev` | `137.184.34.50` |
+
 Do the unstable domain first. Its setup is reversible and does not change the
 current production site. Move the production domain only after unstable has
 passed its owner checks and you have scheduled the production domain cutover.
 
-1. In DigitalOcean, open **Networking → Domains** and add both apex domains. In
-   the production zone create `A @ → PROD_IP` and `A * → PROD_IP`. In the
-   unstable zone create `A @ → UNSTABLE_IP` and `A * → UNSTABLE_IP`. Add AAAA
-   records only when the matching droplet and firewall actually support IPv6.
+1. In DigitalOcean, open **Networking → Domains** and add both apex domains.
+   Create these records in each zone:
+
+   | Type | Hostname | Value |
+   | --- | --- | --- |
+   | `A` | `@` | That environment's droplet IPv4 |
+   | `A` | `*` | That environment's droplet IPv4 |
+   | `A` | `www` | Optional; the wildcard already covers it |
+
+   Add AAAA records only when the matching droplet and firewall actually support
+   IPv6. The wildcard is required for organization hosts such as
+   `life2launch.life2launch.dev`; an apex record alone is insufficient.
 2. Before delegating an actively used domain, copy every record it needs into
    DigitalOcean: MX, SPF/DKIM/DMARC TXT records, verification TXT records, CAA,
-   and intentional subdomains. Delegating nameservers moves authority for the
-   whole zone; GoDaddy's old zone stops answering once caches expire.
+   and intentional subdomains. Create new provider-issued records when moving
+   email to a new sending domain; a DKIM key or verification value for the old
+   domain does not automatically authorize the new one. The old
+   `_acme-challenge` TXT values are expired one-time certificate proofs and should
+   not be copied. Caddy creates and removes current challenge records through the
+   DigitalOcean API. Delegating nameservers moves authority for the whole zone;
+   GoDaddy's old zone stops answering once caches expire.
 3. In GoDaddy, open **Domain Portfolio → the domain → DNS → Nameservers**. Choose
    **I'll use my own nameservers** and enter:
 
@@ -160,6 +220,8 @@ passed its owner checks and you have scheduled the production domain cutover.
    All three DigitalOcean nameservers should appear, and apex/wildcard queries
    should resolve to the intended environment's IP. Do not initialize Caddy
    until the DNS token can edit these DigitalOcean zones.
+   If `dig` is unavailable on Ubuntu, install `dnsutils`, or use
+   `getent ahostsv4 DOMAIN` for a basic address check.
 5. Initialize unstable against `UNSTABLE_DOMAIN`, complete the login/org/file/
    search/collaboration checks, and rehearse one refresh. Its separate domain
    prevents production cookies from being sent to the test environment.
@@ -185,16 +247,46 @@ and [GoDaddy custom nameservers](https://www.godaddy.com/help/change-my-domain-n
 
 ## Connect GitHub Actions to each droplet
 
-Create a dedicated SSH key; install its public half for the deploy user. For
-private infra repos, this inbound key and the repo's outbound read-only deploy
-key are separate responsibilities. Verify the SSH host fingerprint directly
-from the droplet console, for example:
+Create a separate no-passphrase Actions key for each environment on a trusted
+workstation:
+
+```bash
+ssh-keygen -t ed25519 -C 'launch-lms-actions-unstable' \
+  -f ~/.ssh/launch-lms-actions-unstable
+ssh-keygen -t ed25519 -C 'launch-lms-actions-production' \
+  -f ~/.ssh/launch-lms-actions-production
+```
+
+Install only the matching public line on each droplet. If your normal
+administration key already connects, run this from the workstation:
+
+```bash
+cat ~/.ssh/launch-lms-actions-unstable.pub | \
+  ssh -i ~/.ssh/YOUR_ADMIN_KEY -o IdentitiesOnly=yes root@UNSTABLE_IP \
+  'umask 077; mkdir -p /root/.ssh; cat >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys'
+```
+
+Alternatively, use the DigitalOcean console to open
+`/root/.ssh/authorized_keys`, paste the complete single `.pub` line on a new
+line, save it, and run `chmod 600 /root/.ssh/authorized_keys`.
+
+Test before configuring GitHub:
+
+```bash
+ssh -i ~/.ssh/launch-lms-actions-unstable -o IdentitiesOnly=yes root@UNSTABLE_IP
+```
+
+For private infra repos, this inbound Actions key and the repo checkout's
+outbound read-only deploy key are separate responsibilities. The infra repo is
+currently public, so its droplet checkout needs no GitHub deploy key. Verify the
+SSH host fingerprint directly from the droplet console:
 
 ```bash
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
 ```
 
-In **each GitHub environment**, set:
+In the infra repository, open **Settings → Environments**, create `unstable` and
+`production`, and open each environment. Under **Environment secrets**, set:
 
 | Secret | Value |
 | --- | --- |
@@ -203,8 +295,19 @@ In **each GitHub environment**, set:
 | `DROPLET_SSH_KEY` | Private inbound deploy key |
 | `DROPLET_SSH_FINGERPRINT` | Verified `SHA256:...` host fingerprint |
 
-Avoid shared repository-level droplet secrets. Set `DEPLOY_ENABLED=true` after
-bootstrap. Then set app repository variable `UNSTABLE_DEPLOY_ENABLED=true`.
+`DROPLET_SSH_KEY` is the private file without `.pub`, including its
+`-----BEGIN OPENSSH PRIVATE KEY-----` and ending line. The host fingerprint is
+the output from `/etc/ssh/ssh_host_ed25519_key.pub`; it is not the deploy key
+fingerprint.
+
+Under **Environment variables**, create `DEPLOY_ENABLED=false`. Avoid shared
+repository-level droplet secrets. After bootstrap, set it to `true` for unstable,
+run **Actions → Deploy environment → Run workflow → unstable**, and verify the
+host. Then set the app repository variable `UNSTABLE_DEPLOY_ENABLED=true` under
+**app Settings → Secrets and variables → Actions → Variables**. That app switch
+is repository-level; each infra `DEPLOY_ENABLED` switch is environment-level.
+Enable production only after its migration and public checks pass.
+
 An unstable build dispatch carries only candidate metadata; the environment
 secrets determine the host. The host rejects an environment mismatch and stale
 candidate run IDs. Changes to infra alone automatically deploy production when
