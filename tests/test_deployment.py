@@ -31,6 +31,7 @@ class DeploymentTests(unittest.TestCase):
         module = load('release-env')
         module.validate(self.lock(), 'unstable')
         module.validate(self.lock('main'), 'production')
+        module.validate({**self.lock('main'), 'version': '1.2.3'}, 'production')
         for lock, env in [(self.lock(), 'production'), (self.lock('main'), 'unstable'),
                 ({**self.lock(), 'image_digest':None}, 'unstable'),
                 ({**self.lock(), 'image_ref':'untrusted:latest'}, 'unstable')]:

@@ -21,7 +21,7 @@ def validate(lock, environment):
     branch = 'main' if environment == 'production' else 'dev'
     if lock.get('source_branch') != branch:
         raise ValueError(f'{environment} requires a {branch} candidate')
-    if environment == 'production' and not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', lock.get('version', '')):
+    if environment == 'production' and not re.fullmatch(r'v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', lock.get('version', '')):
         raise ValueError('Production requires a stable version')
     return lock
 
