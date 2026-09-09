@@ -16,7 +16,10 @@ container runs Next.js, FastAPI, Hocuspocus, and internal Nginx. PostgreSQL/pgve
 Redis, and Ollama (`all-minilm:33m`) have persistent local volumes. Only Caddy
 publishes host ports. The unstable override prevents the app, migrations, database,
 and Redis from reaching the public network; Caddy and Ollama retain egress for
-TLS and model downloads. Copied payment/SSO settings are cleared on refresh.
+TLS and model downloads. Set `UNSTABLE_APP_EGRESS_ENABLED=true` only when testers
+need an external service configured specifically for unstable, such as the Hub
+advisor. A refresh still clears copied payment, SSO, custom-domain, API-token,
+session, and organization-script state before cutover.
 
 Read the [app deployment guide](https://github.com/Life2LaunchLabs/launch-lms/blob/main/scripts/docs/deployment.md)
 for the feature branch → dev → unstable testing → main → version → infra PR flow.

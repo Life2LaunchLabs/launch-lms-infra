@@ -15,6 +15,8 @@ if redis_url.path not in ('', '/') and not redis_url.path[1:].isdigit():
 if len(env.get('LAUNCHLMS_AUTH_JWT_SECRET_KEY', '')) < 32:
     raise ValueError('Generate a separate JWT secret for this installation')
 if Path('.deployment-environment').read_text().strip() == 'unstable':
+    if env.get('UNSTABLE_APP_EGRESS_ENABLED', 'false') not in ('true', 'false'):
+        raise ValueError('UNSTABLE_APP_EGRESS_ENABLED must be true or false')
     if urlparse(env.get('LAUNCHLMS_SQL_CONNECTION_STRING', '')).hostname != 'db':
         raise ValueError('Unstable must use its local isolated database')
     if urlparse(env.get('LAUNCHLMS_REDIS_CONNECTION_STRING', '')).hostname != 'redis':
