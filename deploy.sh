@@ -21,7 +21,16 @@ if [[ -n "${GHCR_TOKEN:-}" ]]; then
 fi
 python3 scripts/render-caddy.py
 cp "$RELEASE_LOCK" .deploy-state/attempted-release.json
-docker pull "$LAUNCHLMS_IMAGE"
+if ! docker pull "$LAUNCHLMS_IMAGE"; then
+  # A bootstrapped legacy host may no longer have registry credentials. A local
+  # image is acceptable only under the validated digest reference; verification
+  # below still checks its image ID, embedded commit, and schema.
+  docker image inspect "$LAUNCHLMS_IMAGE" >/dev/null || {
+    echo 'Pinned image is unavailable locally and could not be pulled.' >&2
+    exit 1
+  }
+  echo 'Registry pull failed; using the existing exact pinned image.'
+fi
 docker compose build caddy
 docker compose up -d --wait db redis embeddings
 docker compose exec -T embeddings ollama pull all-minilm:33m

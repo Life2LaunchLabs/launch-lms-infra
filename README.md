@@ -426,6 +426,9 @@ docker compose logs --tail 100 launch-lms
 `bash deploy.sh` (or `bash scripts/repair.sh`) reapplies the currently checked-out
 infra/selected image, migrations, model initialization, readiness, and backfill.
 It requires GHCR authentication if the image is private and a pull is needed.
+If the registry is unavailable but the exact digest-pinned image already exists
+locally, deployment may reuse it and still verifies its image ID, embedded
+commit, and schema. A tag-only local image is never accepted as that fallback.
 The script preserves `attempted-release.json`, `previous-release.json`, and
 `deployed-release.json`; success is recorded only after all checks/backfill pass.
 It does not automatically delete old images.
