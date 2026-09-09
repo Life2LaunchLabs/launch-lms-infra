@@ -1,57 +1,41 @@
-#!/bin/bash
-# Called by GitHub Actions on every push to main.
-# Pulls the latest infra config and image, runs migrations, restarts services.
+#!/usr/bin/env bash
+# Deploy the already checked-out infra revision. No moving-branch git reset.
 set -euo pipefail
-
-DEPLOY_DIR=/opt/launch-lms
-STATE_DIR="${DEPLOY_DIR}/.deploy-state"
-LOCK_FILE="${DEPLOY_DIR}/.deploy.lock"
-
-exec 9>"${LOCK_FILE}"
-if ! flock -n 9; then
-  echo "Another deploy is already running. Exiting."
-  exit 1
+cd "$(dirname "$0")"
+mkdir -p .deploy-state
+if [[ "${DEPLOY_LOCK_HELD:-false}" != true ]]; then
+  exec 9>.deploy.lock
+  flock -n 9 || { echo 'Another operation holds the deployment lock'; exit 1; }
 fi
-
-cd "$DEPLOY_DIR"
-git fetch origin
-git reset --hard origin/main
-
-mkdir -p "${STATE_DIR}"
-source "${DEPLOY_DIR}/scripts/load-release-env.sh"
-
-# Regenerate processed Caddyfile from template in case it changed
-DOMAIN=$(grep '^LAUNCHLMS_DOMAIN=' "$DEPLOY_DIR/.env" | cut -d= -f2)
-sed "s/your.domain.com/$DOMAIN/g" "$DEPLOY_DIR/Caddyfile" > "$DEPLOY_DIR/Caddyfile.active"
-
-if [ -n "${GHCR_TOKEN:-}" ] && [ -n "${GHCR_USERNAME:-}" ]; then
-  echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+source scripts/load-release-env.sh
+python3 scripts/check-environment.py
+python3 scripts/render-app-env.py
+cleanup() {
+  if [[ -n "${DOCKER_CONFIG_TEMP:-}" ]]; then rm -rf -- "$DOCKER_CONFIG_TEMP"; fi
+}
+trap cleanup EXIT
+if [[ -n "${GHCR_TOKEN:-}" ]]; then
+  DOCKER_CONFIG_TEMP=$(mktemp -d)
+  export DOCKER_CONFIG="$DOCKER_CONFIG_TEMP"
+  printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:?}" --password-stdin
 fi
-
-docker pull "${LAUNCHLMS_IMAGE}"
-docker compose up -d db redis
-if docker compose run --rm migrate; then
-  cat > "${STATE_DIR}/last-migration.json" <<EOF
-{"status":"success","image":"${LAUNCHLMS_IMAGE}","version":"${LAUNCHLMS_RELEASE_VERSION}","commit_sha":"${LAUNCHLMS_RELEASE_COMMIT_SHA}","finished_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-else
-  cat > "${STATE_DIR}/last-migration.json" <<EOF
-{"status":"failed","image":"${LAUNCHLMS_IMAGE}","version":"${LAUNCHLMS_RELEASE_VERSION}","commit_sha":"${LAUNCHLMS_RELEASE_COMMIT_SHA}","finished_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-  exit 1
+python3 scripts/render-caddy.py
+cp "$RELEASE_LOCK" .deploy-state/attempted-release.json
+docker pull "$LAUNCHLMS_IMAGE"
+docker compose build caddy
+docker compose up -d --wait db redis embeddings
+docker compose exec -T embeddings ollama pull all-minilm:33m
+# Existing production image stays running if migrations fail. Schema changes can
+# still affect it: back up before incompatible migrations (see README).
+docker compose run --rm migrate
+if [[ -f .deploy-state/deployed-release.json ]]; then
+  cp .deploy-state/deployed-release.json .deploy-state/previous-release.json
 fi
-docker compose rm -sf launch-lms || true
 docker compose up -d --remove-orphans launch-lms caddy
-"${DEPLOY_DIR}/scripts/verify-deploy.sh"
-
-cat > "${STATE_DIR}/deployed-release.json" <<EOF
-{"image":"${LAUNCHLMS_IMAGE}","version":"${LAUNCHLMS_RELEASE_VERSION}","commit_sha":"${LAUNCHLMS_RELEASE_COMMIT_SHA}","deployed_at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
-EOF
-
-if [ -n "${GHCR_TOKEN:-}" ] && [ -n "${GHCR_USERNAME:-}" ]; then
-  docker logout ghcr.io
-fi
-
-docker image prune -f
-
-echo "Deploy complete."
+# Ensure mounted config changes are picked up by an already-running Caddy.
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+bash scripts/verify-deploy.sh
+# Backfill only after the embedding model and application are ready.
+docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python scripts/backfill_resource_search.py'
+cp "$RELEASE_LOCK" .deploy-state/deployed-release.json
+echo "Verified $DEPLOY_ENVIRONMENT deployment: $LAUNCHLMS_RELEASE_VERSION ($LAUNCHLMS_RELEASE_COMMIT_SHA)"

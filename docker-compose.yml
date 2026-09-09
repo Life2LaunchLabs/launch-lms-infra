@@ -20,7 +20,12 @@ services:
   launch-lms:
     image: ${LAUNCHLMS_IMAGE}
     restart: unless-stopped
-    env_file: .env
+    env_file: .deploy-state/app.env
+    environment:
+      LAUNCHLMS_ENV: prod
+      LAUNCHLMS_DEVELOPMENT_MODE: "false"
+      LAUNCHLMS_RESOURCE_EMBEDDING_URL: http://embeddings:11434/api/embed
+      LAUNCHLMS_RESOURCE_EMBEDDING_MODEL: all-minilm:33m
     volumes:
       - content_data:/app/api/content
     depends_on:
@@ -32,7 +37,12 @@ services:
   migrate:
     image: ${LAUNCHLMS_IMAGE}
     restart: "no"
-    env_file: .env
+    env_file: .deploy-state/app.env
+    environment:
+      LAUNCHLMS_ENV: prod
+      LAUNCHLMS_DEVELOPMENT_MODE: "false"
+      LAUNCHLMS_RESOURCE_EMBEDDING_URL: http://embeddings:11434/api/embed
+      LAUNCHLMS_RESOURCE_EMBEDDING_MODEL: all-minilm:33m
     volumes:
       - content_data:/app/api/content
     depends_on:
@@ -40,6 +50,17 @@ services:
         condition: service_healthy
     command: >
       sh -lc "cd /app/api && ./scripts/run_alembic_migrations.sh"
+
+  embeddings:
+    image: ollama/ollama:0.33.3
+    restart: unless-stopped
+    volumes:
+      - embeddings_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
 
   db:
     image: pgvector/pgvector:pg16
@@ -72,5 +93,7 @@ volumes:
   pgdata:
   redisdata:
   content_data:
+    name: ${CONTENT_VOLUME_NAME:-launch-lms_content_data}
   caddy_data:
   caddy_config:
+  embeddings_data:

@@ -1,30 +1,91 @@
-name: Deploy Production
-
+name: Deploy environment
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - release.lock.json
+      - docker-compose*.yml
+      - Caddyfile
+      - caddy.Dockerfile
+      - deploy.sh
+      - scripts/**
+      - .github/workflows/deploy.yaml
+  repository_dispatch:
+    types: [unstable-candidate]
   workflow_dispatch:
-
-concurrency:
-  group: deploy-production
-  cancel-in-progress: false
-
+    inputs:
+      environment:
+        type: choice
+        options: [unstable, production]
+        default: unstable
+        required: true
 permissions:
   contents: read
   packages: read
-
+concurrency:
+  group: deploy-${{ github.event_name == 'repository_dispatch' && 'unstable' || inputs.environment || 'production' }}
+  cancel-in-progress: false
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'repository_dispatch' && 'unstable' || inputs.environment || 'production' }}
     steps:
-      - name: Deploy via SSH
+      - uses: actions/checkout@v6
+      - name: Prepare validated unstable candidate
+        id: candidate
+        env:
+          PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          python3 - <<'PY'
+          import base64, importlib.util, json, os
+          spec=importlib.util.spec_from_file_location('release_env', 'scripts/release-env.py')
+          module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+          value=''
+          if os.environ['EVENT']=='repository_dispatch':
+              data=module.validate(json.loads(os.environ['PAYLOAD']), 'unstable')
+              assert str(data['build_run_id']).isdigit()
+              value=base64.b64encode(json.dumps(data).encode()).decode()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('payload='+value+'\n')
+          PY
+      - name: Require environment-specific connection settings
+        if: vars.DEPLOY_ENABLED == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DROPLET_HOST }}
+          DEPLOY_USER: ${{ secrets.DROPLET_USER }}
+          DEPLOY_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DEPLOY_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+        run: |
+          test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_KEY" && test -n "$DEPLOY_FINGERPRINT"
+      - name: Deploy exact infra revision over SSH
+        if: vars.DEPLOY_ENABLED == 'true'
         uses: appleboy/ssh-action@v1
+        env:
+          INFRA_REVISION: ${{ github.sha }}
+          TARGET_ENVIRONMENT: ${{ github.event_name == 'repository_dispatch' && 'unstable' || inputs.environment || 'production' }}
+          CANDIDATE_BASE64: ${{ steps.candidate.outputs.payload }}
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.DROPLET_HOST }}
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          envs: INFRA_REVISION,TARGET_ENVIRONMENT,CANDIDATE_BASE64,GHCR_USERNAME,GHCR_TOKEN
+          command_timeout: 45m
           script: |
-            export GHCR_USERNAME="${{ github.actor }}"
-            export GHCR_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            /opt/launch-lms/deploy.sh
+            set -eu
+            cd /opt/launch-lms
+            exec 9>.deploy.lock
+            flock -w 2400 9
+            test "$(cat .deployment-environment)" = "$TARGET_ENVIRONMENT"
+            test -z "$(git status --porcelain --untracked-files=no)"
+            git fetch origin main
+            git merge-base --is-ancestor "$INFRA_REVISION" origin/main
+            git checkout --detach "$INFRA_REVISION"
+            export DEPLOY_LOCK_HELD=true
+            if [ -n "$CANDIDATE_BASE64" ]; then
+              python3 scripts/accept-candidate.py
+            fi
+            bash deploy.sh

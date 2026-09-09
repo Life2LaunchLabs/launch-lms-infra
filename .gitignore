@@ -1,3 +1,7 @@
 .env
 Caddyfile.active
 .codex
+.deployment-environment
+.deploy-state/
+.deploy.lock
+__pycache__/
