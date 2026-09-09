@@ -35,7 +35,13 @@ docker compose up -d --remove-orphans launch-lms caddy
 # Ensure mounted config changes are picked up by an already-running Caddy.
 docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
 bash scripts/verify-deploy.sh
-# Backfill only after the embedding model and application are ready.
-docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python scripts/backfill_resource_search.py'
+# Backfill only after the embedding model and application are ready. Releases
+# created before resource search existed do not contain this script; domain-only
+# migration of those pinned images must remain possible without changing images.
+if docker compose exec -T launch-lms test -f /app/api/scripts/backfill_resource_search.py; then
+  docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python scripts/backfill_resource_search.py'
+else
+  echo 'Pinned legacy image has no resource-search backfill; skipping.'
+fi
 cp "$RELEASE_LOCK" .deploy-state/deployed-release.json
 echo "Verified $DEPLOY_ENVIRONMENT deployment: $LAUNCHLMS_RELEASE_VERSION ($LAUNCHLMS_RELEASE_COMMIT_SHA)"
