@@ -26,12 +26,16 @@ for _attempt in $(seq 1 90); do
   sleep 2
 done
 [[ "$ready" == true ]] || { echo 'Application readiness failed'; exit 1; }
-docker compose exec -T launch-lms python -c '
+if docker compose exec -T launch-lms test -f /app/api/scripts/backfill_resource_search.py; then
+  docker compose exec -T launch-lms python -c '
 import json, urllib.request
 r=urllib.request.Request("http://embeddings:11434/api/embed", data=json.dumps({"model":"all-minilm:33m","input":"deployment check"}).encode(), headers={"Content-Type":"application/json"})
 with urllib.request.urlopen(r, timeout=60) as response:
     assert len(json.load(response)["embeddings"][0]) == 384
 '
-docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python -' < scripts/verify-storage.py
+  docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python -' < scripts/verify-storage.py
+else
+  echo 'Pinned legacy image predates resource search; skipping feature-specific vector checks.'
+fi
 
-echo "Verified image, commit, schema, dependencies, API, frontend, collaboration, and embeddings."
+echo "Verified image, commit, schema, dependencies, API, frontend, and collaboration."
