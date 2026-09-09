@@ -16,4 +16,15 @@ eval "$release_exports"
 export COMPOSE_FILE="$DEPLOY_DIR/docker-compose.yml"
 if [[ "$DEPLOY_ENVIRONMENT" == unstable ]]; then
   export COMPOSE_FILE="$COMPOSE_FILE:$DEPLOY_DIR/docker-compose.unstable.yml"
+  unstable_app_egress=$(python3 - "$DEPLOY_DIR/.env" <<'PY'
+from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(sys.argv[1]).resolve().parent/'scripts'))
+from env_file import read_env
+print(read_env(Path(sys.argv[1])).get('UNSTABLE_APP_EGRESS_ENABLED', 'false'))
+PY
+)
+  if [[ "$unstable_app_egress" == true ]]; then
+    export COMPOSE_FILE="$COMPOSE_FILE:$DEPLOY_DIR/docker-compose.unstable-app-egress.yml"
+  fi
 fi

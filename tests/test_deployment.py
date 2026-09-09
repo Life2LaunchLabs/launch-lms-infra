@@ -105,6 +105,15 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn('app-key',result)
             self.assertIn('collab-key',result)
 
+    def test_unstable_application_egress_requires_explicit_switch(self):
+        isolated=(ROOT/'docker-compose.unstable.yml').read_text()
+        opt_in=(ROOT/'docker-compose.unstable-app-egress.yml').read_text()
+        loader=(ROOT/'scripts/load-release-env.sh').read_text()
+        self.assertNotIn('launch-lms:\n    networks:',isolated)
+        self.assertIn('launch-lms:\n    networks: [default, egress]',opt_in)
+        self.assertIn("UNSTABLE_APP_EGRESS_ENABLED",loader)
+        self.assertIn('docker-compose.unstable-app-egress.yml',loader)
+
     def test_unstable_gate_uses_shared_session_cookie_without_forwarding_basic_auth(self):
         password_hash = '$2a$14$' + 'a'*53
         with tempfile.TemporaryDirectory() as tmp:
