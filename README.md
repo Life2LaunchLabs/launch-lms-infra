@@ -392,6 +392,8 @@ ensure no other writers access the database/storage.
    payment/SSO connections, revokes invitations/join links, removes organization
    scripts, and rewrites URL authorities from the production domain to the test
    domain (including org subdomains). Emails and password hashes stay unchanged.
+   It also derives the owner organization slug from the restored database so the
+   apex stays canonical and platform management resolves to the copied owner org.
    Browser-visible external links are still external links; URLs embedded inside
    binary uploads cannot be rewritten by this database sanitizer.
 4. Cutover saves the old `.env`, switches database/content, rotates the unstable

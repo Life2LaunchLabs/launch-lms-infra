@@ -17,7 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 def load(name):
     spec = importlib.util.spec_from_file_location(name.replace('-', '_'), ROOT/'scripts'/f'{name}.py')
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    sys.path.insert(0, str(ROOT/'scripts'))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.pop(0)
     return module
 
 
@@ -179,6 +183,21 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual({},conn.execute(select(sso.c.provider_config)).scalar())
             self.assertFalse(conn.execute(select(sso.c.enabled)).scalar())
             self.assertEqual([],list(conn.execute(select(tokens))))
+
+    def test_refresh_default_org_follows_restored_database(self):
+        updater=load('set-refresh-default-org')
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'refresh.env'
+            path.write_text(
+                "LAUNCHLMS_DOMAIN='test.example.net'\n"
+                "NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG='temporary-org'\n"
+            )
+            updater.set_default_org(path,'copied-owner')
+            result=path.read_text()
+            self.assertIn("NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG='copied-owner'",result)
+            self.assertNotIn('temporary-org',result)
+            with self.assertRaises(ValueError):
+                updater.set_default_org(path,'invalid.example.net')
 
 
 if __name__=='__main__':

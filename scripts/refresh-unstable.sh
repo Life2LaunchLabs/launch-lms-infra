@@ -24,6 +24,10 @@ candidate_compose() {
 docker compose exec -T db createdb -U launchlms "$database"
 docker volume create "$volume" >/dev/null
 docker compose exec -T db pg_restore -U launchlms --no-owner --no-acl --exit-on-error -d "$database" < "$snapshot/database.dump"
+default_org=$(docker compose exec -T db psql -U launchlms -d "$database" -At -v ON_ERROR_STOP=1 -c 'SELECT slug FROM organization ORDER BY id LIMIT 1')
+[[ -n "$default_org" ]] || { echo 'Restored database has no owner organization'; exit 1; }
+python3 scripts/set-refresh-default-org.py .deploy-state/refresh.env "$default_org"
+python3 scripts/render-app-env.py .deploy-state/refresh.env .deploy-state/refresh-app.env
 candidate_compose run --rm --no-deps -T --entrypoint tar migrate -C /app/api/content -xzf - < "$snapshot/content.tar.gz"
 candidate_compose run --rm -T migrate
 candidate_compose run --rm --no-deps -T -e SOURCE_DOMAIN="$source_domain" -e TARGET_DOMAIN="$target_domain" --entrypoint sh migrate -lc 'cd /app/api && uv run python -' < scripts/sanitize-copy.py
