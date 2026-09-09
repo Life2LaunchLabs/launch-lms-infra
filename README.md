@@ -229,17 +229,19 @@ passed its owner checks and you have scheduled the production domain cutover.
    its current image, disable the production GitHub environment, take a snapshot,
    and follow **Migrate the existing production droplet** below. Change only the
    domain/origin/cookie/collaboration values in `.env`; preserve the release
-   lock, database, content volume, JWT key, and other production secrets. Run
-   `bash deploy.sh`, then verify the new apex and an org subdomain before enabling
-   production automation again.
-7. Keep the old production site active until the scheduled cutover. Changing
-   `.env` and deploying replaces Caddy's active base domain, so one installation
-   does not serve the old and new base domains simultaneously. Save the old
+   lock, database, content volume, JWT key, and other production secrets. Set
+   `LAUNCHLMS_LEGACY_DOMAIN` to the old production base domain to redirect its
+   apex, `www`, and organization hosts to their equivalents on the new domain.
+   Run `bash deploy.sh`, then verify the new apex and an org subdomain before
+   enabling production automation again.
+7. Keep the old production site active until the scheduled cutover. Save the old
    `.env`; if verification fails, restore it and run `bash deploy.sh` to return
-   traffic to the old domain. After the new domain passes, announce it and update
-   OAuth callbacks, webhook destinations, email links, bookmarks, and external
-   integration allowlists. Redirecting old apex and org URLs is a separate
-   migration task.
+   traffic to the old domain. With `LAUNCHLMS_LEGACY_DOMAIN` configured, Caddy
+   obtains certificates for both domains and permanently redirects old apex and
+   `www` requests to the new apex while preserving organization subdomains and
+   request paths. After the new domain passes, announce it and update OAuth
+   callbacks, webhook destinations, email links, bookmarks, and external
+   integration allowlists.
 
 Official references: [DigitalOcean DNS delegation](https://docs.digitalocean.com/products/networking/dns/getting-started/dns-registrars/),
 [DigitalOcean domain setup](https://docs.digitalocean.com/products/networking/dns/getting-started/quickstart/),

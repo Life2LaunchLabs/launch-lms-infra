@@ -120,6 +120,40 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(2, result.count('import launch_lms_proxy'))
             self.assertNotIn('__LAUNCHLMS_ROUTES__', result)
 
+    def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            shutil.copy(ROOT/'Caddyfile', path/'Caddyfile')
+            (path/'.deployment-environment').write_text('production\n')
+            (path/'.env').write_text(
+                'LAUNCHLMS_DOMAIN=new.example.net\n'
+                'LAUNCHLMS_LEGACY_DOMAIN=old.example.org\n'
+            )
+            subprocess.run([sys.executable,str(ROOT/'scripts/render-caddy.py')],cwd=path,check=True)
+            result=(path/'Caddyfile.active').read_text()
+            self.assertIn('new.example.net, *.new.example.net', result)
+            self.assertIn('old.example.org, *.old.example.org', result)
+            self.assertIn('host old.example.org www.old.example.org', result)
+            self.assertIn('header_regexp legacy_org Host', result)
+            self.assertIn('https://new.example.net{uri} permanent', result)
+            self.assertIn('https://{re.legacy_org.1}.new.example.net{uri} permanent', result)
+
+    def test_legacy_domain_cannot_overlap_current_domain(self):
+        for legacy in ('new.example.net', 'www.new.example.net'):
+            with self.subTest(legacy=legacy), tempfile.TemporaryDirectory() as tmp:
+                path=Path(tmp)
+                shutil.copy(ROOT/'Caddyfile', path/'Caddyfile')
+                (path/'.deployment-environment').write_text('production\n')
+                (path/'.env').write_text(
+                    'LAUNCHLMS_DOMAIN=new.example.net\n'
+                    f'LAUNCHLMS_LEGACY_DOMAIN={legacy}\n'
+                )
+                result=subprocess.run(
+                    [sys.executable,str(ROOT/'scripts/render-caddy.py')],
+                    cwd=path,capture_output=True
+                )
+                self.assertNotEqual(0,result.returncode)
+
     def test_sanitizer_retains_passwords_and_rewrites_only_own_urls(self):
         from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, JSON, Boolean, select
         sanitizer=load('sanitize-copy')
