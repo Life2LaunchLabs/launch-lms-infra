@@ -5,6 +5,10 @@ from urllib.parse import urlparse
 env = read_env(Path('.env'))
 if env.get('LAUNCHLMS_DEVELOPMENT_MODE') != 'false' or env.get('LAUNCHLMS_ENV') != 'prod':
     raise ValueError('Both environments must use production runtime mode')
+if env.get('LAUNCHLMS_INTERNAL_BACKEND_URL') != 'http://localhost:9000':
+    raise ValueError('Server-side auth must use the container-local FastAPI endpoint')
+if not env.get('NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG'):
+    raise ValueError('Set the default organization slug so apex links stay on the main domain')
 redis_url = urlparse(env.get('LAUNCHLMS_REDIS_CONNECTION_STRING', ''))
 if redis_url.path not in ('', '/') and not redis_url.path[1:].isdigit():
     raise ValueError('Redis database must be numeric, for example redis://redis:6379/0')

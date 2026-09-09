@@ -229,7 +229,9 @@ known and that any new migrations have a recovery plan.
    ```
 3. Confirm `.env` has `LAUNCHLMS_ENV=prod`,
    `LAUNCHLMS_DEVELOPMENT_MODE=false`,
-   `LAUNCHLMS_INTERNAL_API_URL=http://localhost/api/v1/`, and blank
+   `LAUNCHLMS_INTERNAL_API_URL=http://localhost/api/v1/`,
+   `LAUNCHLMS_INTERNAL_BACKEND_URL=http://localhost:9000`, the production
+   default organization slug in `NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG`, and blank
    `NEXT_PUBLIC_LAUNCHLMS_API_URL` for same-origin browser API calls. Preserve the
    existing database connection, passwords, JWT key, and content settings.
    Correct a legacy `redis://redis:6379/launchlms` URL to
