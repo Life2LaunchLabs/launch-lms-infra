@@ -429,6 +429,9 @@ It requires GHCR authentication if the image is private and a pull is needed.
 If the registry is unavailable but the exact digest-pinned image already exists
 locally, deployment may reuse it and still verifies its image ID, embedded
 commit, and schema. A tag-only local image is never accepted as that fallback.
+Feature-specific resource-search storage and embedding checks run when the pinned
+image contains that feature; older release migrations still require all core
+identity, schema, dependency, API, frontend, and collaboration checks.
 The script preserves `attempted-release.json`, `previous-release.json`, and
 `deployed-release.json`; success is recorded only after all checks/backfill pass.
 It does not automatically delete old images.
