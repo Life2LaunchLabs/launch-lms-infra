@@ -1,3 +1,13 @@
+(launch_lms_proxy) {
+    reverse_proxy launch-lms:80 {
+        header_up X-Forwarded-Proto https
+        header_up X-Real-IP {remote_host}
+        transport http {
+            read_timeout 300s
+        }
+    }
+}
+
 your.domain.com, *.your.domain.com {
     tls {
         dns digitalocean {env.DO_AUTH_TOKEN}
@@ -8,11 +18,5 @@ your.domain.com, *.your.domain.com {
     request_body {
         max_size 500MB
     }
-    reverse_proxy launch-lms:80 {
-        header_up X-Forwarded-Proto https
-        header_up X-Real-IP {remote_host}
-        transport http {
-            read_timeout 300s
-        }
-    }
+    __LAUNCHLMS_ROUTES__
 }
