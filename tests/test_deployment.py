@@ -114,6 +114,42 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn("UNSTABLE_APP_EGRESS_ENABLED",loader)
         self.assertIn('docker-compose.unstable-app-egress.yml',loader)
 
+    def test_unstable_candidate_integrations_require_explicit_egress(self):
+        base = (
+            'LAUNCHLMS_DEVELOPMENT_MODE=false\n'
+            'LAUNCHLMS_ENV=prod\n'
+            'LAUNCHLMS_INTERNAL_BACKEND_URL=http://localhost:9000\n'
+            'NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG=default\n'
+            'LAUNCHLMS_REDIS_CONNECTION_STRING=redis://redis:6379/0\n'
+            'LAUNCHLMS_AUTH_JWT_SECRET_KEY=' + 'x'*40 + '\n'
+            'LAUNCHLMS_SQL_CONNECTION_STRING=postgresql+psycopg2://launchlms:password@db:5432/launchlms\n'
+            'LAUNCHLMS_CONTENT_DELIVERY_TYPE=filesystem\n'
+        )
+        integrations = (
+            'LAUNCHLMS_GEMINI_API_KEY=unstable-ai-key\n'
+            'LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN=unstable-jira-token\n'
+            'LAUNCHLMS_GITHUB_TOKEN=unstable-github-token\n'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path/'.deployment-environment').write_text('unstable\n')
+            (path/'.env').write_text(base + 'UNSTABLE_APP_EGRESS_ENABLED=false\n' + integrations)
+            blocked = subprocess.run(
+                [sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, capture_output=True
+            )
+            self.assertNotEqual(0, blocked.returncode)
+
+            (path/'.env').write_text(base + 'UNSTABLE_APP_EGRESS_ENABLED=true\n' + integrations)
+            subprocess.run([sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, check=True)
+
+            (path/'.env').write_text(
+                base + 'UNSTABLE_APP_EGRESS_ENABLED=true\n' + integrations + 'LAUNCHLMS_STRIPE_SECRET_KEY=unsafe\n'
+            )
+            blocked = subprocess.run(
+                [sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, capture_output=True
+            )
+            self.assertNotEqual(0, blocked.returncode)
+
     def test_unstable_gate_uses_shared_session_cookie_without_forwarding_basic_auth(self):
         password_hash = '$2a$14$' + 'a'*53
         with tempfile.TemporaryDirectory() as tmp:
