@@ -128,6 +128,7 @@ class DeploymentTests(unittest.TestCase):
         integrations = (
             'LAUNCHLMS_GEMINI_API_KEY=unstable-ai-key\n'
             'LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN=unstable-jira-token\n'
+            'LAUNCHLMS_FEEDBACK_JIRA_PROJECT_KEY=TEST\n'
             'LAUNCHLMS_GITHUB_TOKEN=unstable-github-token\n'
         )
         with tempfile.TemporaryDirectory() as tmp:

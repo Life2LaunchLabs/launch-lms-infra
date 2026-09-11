@@ -31,6 +31,7 @@ if Path('.deployment-environment').read_text().strip() == 'unstable':
         allowed.update({
             'LAUNCHLMS_GEMINI_API_KEY',
             'LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN',
+            'LAUNCHLMS_FEEDBACK_JIRA_PROJECT_KEY',
             'LAUNCHLMS_GITHUB_TOKEN',
         })
     for key, value in env.items():
