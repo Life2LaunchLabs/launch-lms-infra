@@ -18,7 +18,9 @@ publishes host ports. The unstable override prevents the app, migrations, databa
 and Redis from reaching the public network; Caddy and Ollama retain egress for
 TLS and model downloads. Set `UNSTABLE_APP_EGRESS_ENABLED=true` only when testers
 need an external service configured specifically for unstable, such as the Hub
-advisor. A refresh still clears copied payment, SSO, custom-domain, API-token,
+advisor, Jira feedback, or GitHub candidate notes. Only the Gemini, feedback Jira,
+and candidate-notes GitHub credentials are accepted with this opt-in; use
+credentials dedicated to unstable. A refresh still clears copied payment, SSO, custom-domain, API-token,
 session, and organization-script state before cutover.
 
 Read the [app deployment guide](https://github.com/Life2LaunchLabs/launch-lms/blob/main/scripts/docs/deployment.md)

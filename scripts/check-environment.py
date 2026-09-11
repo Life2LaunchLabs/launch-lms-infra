@@ -15,7 +15,8 @@ if redis_url.path not in ('', '/') and not redis_url.path[1:].isdigit():
 if len(env.get('LAUNCHLMS_AUTH_JWT_SECRET_KEY', '')) < 32:
     raise ValueError('Generate a separate JWT secret for this installation')
 if Path('.deployment-environment').read_text().strip() == 'unstable':
-    if env.get('UNSTABLE_APP_EGRESS_ENABLED', 'false') not in ('true', 'false'):
+    app_egress_enabled = env.get('UNSTABLE_APP_EGRESS_ENABLED', 'false')
+    if app_egress_enabled not in ('true', 'false'):
         raise ValueError('UNSTABLE_APP_EGRESS_ENABLED must be true or false')
     if urlparse(env.get('LAUNCHLMS_SQL_CONNECTION_STRING', '')).hostname != 'db':
         raise ValueError('Unstable must use its local isolated database')
@@ -26,6 +27,12 @@ if Path('.deployment-environment').read_text().strip() == 'unstable':
     forbidden = ('KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'CLIENT_ID')
     allowed = {'LAUNCHLMS_AUTH_JWT_SECRET_KEY', 'COLLAB_INTERNAL_KEY', 'POSTGRES_PASSWORD',
         'LAUNCHLMS_INITIAL_ADMIN_PASSWORD', 'DO_AUTH_TOKEN', 'UNSTABLE_HTTP_PASSWORD_HASH'}
+    if app_egress_enabled == 'true':
+        allowed.update({
+            'LAUNCHLMS_GEMINI_API_KEY',
+            'LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN',
+            'LAUNCHLMS_GITHUB_TOKEN',
+        })
     for key, value in env.items():
         if value and any(word in key for word in forbidden) and key not in allowed:
             raise ValueError(f'Remove external integration credential from unstable: {key}')
