@@ -1,5 +1,5 @@
 FROM node:22-bookworm-slim
-ARG CODEX_VERSION=0.116.0
+ARG CODEX_VERSION=0.154.0
 ARG SYMPHONY_SHA256=bace377e92b7c244a29da15a88f517c7722ca69e249068395f77ce6912ef39eb
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git gh python3 python3-venv build-essential ripgrep openssh-client libssl3 libncurses6 libstdc++6 && rm -rf /var/lib/apt/lists/*
 RUN npm install -g @openai/codex@${CODEX_VERSION} && npm cache clean --force
