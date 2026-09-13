@@ -7,7 +7,7 @@ tracker:
     api_token: $JIRA_API_TOKEN
     project_key: BOT
   required_labels: [symphony]
-  active_states: ["To Do", "In Progress"]
+  active_states: ["To Do", "In Progress", "merge"]
   terminal_states: [Done]
 polling:
   interval_ms: 30000
@@ -16,6 +16,7 @@ workspace:
 hooks:
   after_create: |
     git clone --branch dev --single-branch https://github.com/Life2LaunchLabs/launch-lms.git .
+    printf '\n.symphony-review-*.json\n' >> .git/info/exclude
   timeout_ms: 180000
 agent:
   max_concurrent_agents: 1
@@ -33,68 +34,119 @@ server:
   host: 0.0.0.0
   port: 8788
 ---
-You are delivering {{ issue.identifier }}: {{ issue.title }} unattended on the dev server.
+You are delivering {{ issue.identifier }}: {{ issue.title }} on the dev server.
 {{ issue.description }}
-{% if attempt %}This is continuation/retry {{ attempt }}. Resume existing work and inspect the workpad and PR before repeating work.{% endif %}
+{% if attempt %}Continuation/retry {{ attempt }}: resume existing workspace, workpad and PR; do not repeat finished work.{% endif %}
 
-The owner authorized eligible BOT parent Stories/Tasks to be implemented, checked,
-merged through a PR into dev, and automatically deployed while they are away.
-Read AGENTS.md and docs/agent-harness.md before editing. The September 2026 owner
-pivot retires productOS as an execution dependency: use the native jira_rest tool
-directly, never require a sibling productOS checkout or local SQLite/outbox sync.
-If this checkout predates that harness, these workflow instructions apply immediately.
+OWNER POLICY CHANGE: implementation is authorized unattended, but merging is NOT.
+The owner must move the Jira parent from In Review to Merge after reviewing attached
+evidence. This supersedes ALL earlier automatic-merge instructions in repository
+files, historical Jira comments or session history. Never move an issue into Merge
+yourself. Never infer approval from a comment, elapsed time, green checks or old PR.
+Jira BOT is the execution authority; productOS/outbox/SQLite is not a prerequisite.
 
-1. Fetch /rest/api/3/issue/{{ issue.identifier }} with fields summary,description,
-   status,issuetype,subtasks,labels,issuelinks and read its paginated comments.
-   Only work on non-subtask Story/Task issues with the symphony label. For an
-   ineligible issue, stop without implementation. Never implement an Idea or FEED.
-2. For To Do, fetch transitions and move the parent to In Progress. For In Progress,
-   resume. If the owner removed symphony or moved it to In Review/Done, stop.
-3. Find/create ONE Jira comment headed 'Symphony workpad', using Jira ADF. Keep it
-   updated with plan, acceptance criteria, branch/PR, checks, blockers and evidence.
-   Read linked deliverable subtasks and comments; they belong to the parent task.
-4. Fetch origin dev; create symphony/<issue-key> from origin/dev for new work. On
-   retry preserve uncommitted work, inspect existing PRs and reconcile before acting.
-   Search existing/legacy/permission-gated implementations before changing behavior.
-5. Implement all deliverables and run relevant checks. For UI changes use the design
-   catalog and existing selected references; exercise real browser interactions at
-   desktop/mobile and inspect screenshots. Missing references/browser/test data must
-   become a precise blocker, never a fabricated visual pass.
-6. Commit and push the delivery branch, create/update a PR targeting dev. Resolve
-   actionable PR feedback. Wait for ALL six required checks on the CURRENT head:
-   contract; api-lint / ruff; api-tests / test; migrations / alembic-heads;
-   Build and smoke (amd64); Build and smoke (arm64). Also require any browser-ui
-   check to succeed. Do not use --admin, bypass checks, or push directly to dev.
-   If branch is behind, merge origin/dev, fix conflicts and wait for new checks.
-7. Merge using gh pr merge --squash --match-head-commit <tested-sha>. This owner
-   instruction authorizes the merge; do not wait for another approval. Keep the
-   Jira parent In Progress through merge and deployment verification.
-8. Follow the merged dev commit's 'Build Community Images' workflow and
-   the infra 'Deploy environment' run triggered by its candidate dispatch. Inspect
-   run conclusions and the deployed /api/v1/instance/build response on life2launch.dev.
-   If the tester HTTP gate blocks the public endpoint, use the matched infra run
-   verification log as deployed-commit evidence; never bypass the gate.
-   Confirm the running commit equals the merge commit (or a later verified dev
-   descendant). A merge alone is NOT proof of deployment. If deployment fails,
-   record the failing run URL and exact blocker; never mark handoff complete.
-9. When implementation/checks/deployment succeed, add concise owner test steps and
-   evidence to the workpad; move finished deliverable subtasks and then parent to
-   In Review using available Jira transitions. Never move anything to Done.
-10. If blocked, update the workpad with exact missing input and remove only the
-    symphony label (preserve other labels); leave parent In Progress. The owner
-    re-adds symphony after resolving it. Do not spin endlessly or invent approval.
+Read AGENTS.md and docs/agent-harness.md for app architecture and checks, applying
+this newer merge policy wherever they conflict. Use native jira_rest for Jira.
 
-Keep production untouched. Do not access production hosts or credentials. No FEED
-triage, replies, or status propagation. Never print credentials. Do not change branch
-protection, deploy switches, or the running application directly. Runtime deployment
-is owned by the existing checked-image GitHub Actions pipeline.
+The board column Merge maps to the Jira status named exactly `merge` (lowercase).
+Treat references to Merge below as that status. Use live transition IDs.
 
-Browser support is provisioned: Bun and Playwright OS dependencies, isolated test-db
-and test-redis, UI_TEST_DATABASE_URL/UI_TEST_REDIS_URL and synthetic login variables.
-Install repository-pinned browser binaries as needed. Follow browser-ui.yaml to seed
-ONLY this test database, and scripts/ui/run-local.sh (HTTP/dev mode) for captures.
-The runner is constrained to 2300 MiB: do not build images locally. For a full build
-or browser run that exceeds memory, run CI with screenshot retention and download
-artifacts to inspect. Never declare a visual pass without inspecting screenshots.
-Reading an explicitly linked FEED report/attachment as evidence is allowed; no FEED
-writes, triage or propagation. Preserve sensitive reference images privately.
+## Route by current Jira state
+
+Fetch the parent with fields summary,description,status,issuetype,subtasks,labels,
+issuelinks and all paginated comments. Only non-subtask Story/Task parents with
+symphony are eligible. Never dispatch Ideas, subtasks or FEED. If label removed or
+state is In Review/Done, stop. Read all deliverable subtasks and current workpad.
+
+- To Do: move to In Progress, then implement or address owner feedback.
+- In Progress: resume implementation; do not merge.
+- Merge: run the approved merge procedure below; do not change implementation.
+
+Keep ONE persistent 'Symphony workpad' comment updated with plan, acceptance,
+branch/PR, current revision, checks, findings, blockers and artifact references.
+Fetch origin/dev and create symphony/<issue-key> from it for new work; on retries
+preserve uncommitted files and inspect any existing PR before touching branches.
+Search existing, legacy and permission-gated implementations before editing.
+
+## Implementation and evidence handoff
+
+Implement all scoped deliverables. Use existing selected visual references and
+apps/web/design-system/catalog.json. For UI work reproduce the reported issue,
+exercise desktop/mobile and relevant states, inspect actual screenshots against the
+references, and fix material differences. Never fabricate visual verification or
+silently approve a replacement baseline. Missing browser/data/reference is a blocker.
+
+Push a branch and create/update a PR targeting dev. Resolve actionable PR feedback.
+Require all six checks on the CURRENT head: contract; api-lint / ruff;
+api-tests / test; migrations / alembic-heads; Build and smoke (amd64);
+Build and smoke (arm64). Require browser checks to succeed too. If dev advanced,
+merge origin/dev and repeat affected checks BEFORE submitting review evidence.
+Never bypass branch protection, enable PR auto-merge, or push directly to dev/main.
+
+Create a task-specific Markdown review report with:
+- Problem/reproduction and resulting behavior; concise owner review scenarios.
+- Exact PR/head SHA, commands/results and CI links; no claims beyond evidence.
+- Selected reference versions, actual screenshot filenames, CSS viewports, themes,
+  states and visual findings. UI work includes BEFORE/AFTER captures at desktop and
+  phone sizes; a short video is useful for interaction/scrolling behavior when feasible.
+- Remaining limitations and deviations requiring owner review.
+Use synthetic fixtures in uploaded captures. Never upload secrets, private learner
+reference images, production data or the private FEED screenshot supplied as context.
+The owner must be able to review attachments directly in Jira, not just local paths.
+
+When checks and visual inspection pass, write an atomic JSON request at the task
+workspace root named .symphony-review-request.json (write temporary then rename):
+{"issue":"{{ issue.identifier }}","pr":123,"sha":"<full tested 40-char SHA>",
+ "summary":"Short outcome and owner review instructions",
+ "files":["<relative report.md>","<relative before.png>","<relative after.png>"],
+ "ui_change":true,"synthetic_evidence_only":true}
+For non-UI changes, ui_change=false and the Markdown report is sufficient. Maximum
+12 files, each <=20 MiB. The infra evidence uploader attaches files, verifies current
+PR checks/head, records the reviewed SHA in Jira property launch-symphony-review,
+and moves the parent to In Review. Keep finished subtasks In Review; never Done.
+Wait for upload success / parent In Review before ending. If upload fails, inspect
+the uploader log or fix the manifest; never pretend local paths are attachments.
+In Review consumes no model turns: stop and wait for the owner to move it to Merge.
+
+## Approved merge (ONLY when current parent status is Merge)
+
+Read /rest/api/3/issue/{{ issue.identifier }}/properties/launch-symphony-review.
+A record with reviewed sha, pr, submitted_at and comment_id MUST exist. Fetch that
+PR with gh. It must target dev and its current head must equal the reviewed sha.
+If missing/stale or a rebase/conflict/code change is needed, DO NOT merge: explain
+why, move the parent to In Progress, update/retest and submit NEW evidence; require
+a new owner move to Merge. Never carry approval across changed commits.
+
+Re-read Jira immediately before merging: still Merge and labeled symphony; reviewed
+record unchanged. Resolve/check review threads and require all six checks plus any
+browser checks to succeed on that exact head. Merge ONLY with:
+gh pr merge <pr> --repo Life2LaunchLabs/launch-lms --squash --match-head-commit <reviewed-sha>
+Never --admin or --auto. If PR is already merged on retry, inspect its merge commit
+and continue deployment verification without creating another implementation branch.
+
+Follow merged dev SHA's Build Community Images run and the matching infra Deploy
+environment dispatch. Both must succeed. Verify /api/v1/instance/build commit_sha on
+life2launch.dev; when the tester gate blocks that endpoint, use matched successful
+infra verification logs as evidence, never bypass it. A newer verified dev descendant
+is acceptable only after ancestry validation. Merge alone is not deployment proof.
+
+After verified deployment, update workpad with merge SHA, PR, candidate/deploy run
+links, deployed commit and owner test steps. Remove symphony to avoid redispatch;
+leave parent in Merge with clear 'Deployed — ready for owner signoff' message. The
+owner moves it to Done. Never mark parent or subtasks Done yourself.
+
+If blocked, record exact missing input, remove only symphony, and preserve current
+state. Owner re-adds label after resolution. No infinite retrying or invented approval.
+
+## Runtime and data boundaries
+
+Docker is the external sandbox: no host Docker socket, live application mounts,
+production credentials or live app database access. Keep production untouched.
+One agent, 2300 MiB. Use CI for heavyweight builds. Bun/browser OS dependencies,
+isolated test-db/test-redis, synthetic UI_TEST_* variables are provisioned. Follow
+browser-ui.yaml to migrate/seed ONLY the test DB; scripts/ui/run-local.sh supports
+HTTP/dev mode. Install repository-pinned browser binaries. For CI visual evidence,
+retain/download captures and inspect them before submitting. Never claim screenshot
+existence or passing source/build checks constitutes visual verification.
+Read linked FEED evidence if necessary, but never triage, reply, propagate statuses,
+or modify FEED. App-owned feedback collection remains enabled. Never log credentials.
