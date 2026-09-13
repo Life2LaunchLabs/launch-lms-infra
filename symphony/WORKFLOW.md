@@ -16,6 +16,7 @@ workspace:
 hooks:
   after_create: |
     git clone --branch dev --single-branch https://github.com/Life2LaunchLabs/launch-lms.git .
+    printf '\n.symphony-review-*.json\n' >> .git/info/exclude
   timeout_ms: 180000
 agent:
   max_concurrent_agents: 1
