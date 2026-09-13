@@ -3,20 +3,28 @@
 Pinned OpenAI Symphony v0.0.2 with Codex 0.154.0 runs one agent in a separate,
 resource-limited Compose project. It cannot mount the Docker socket, application
 volumes, host checkout, or production credentials. Its dashboard binds host loopback
-only. Persistent workspaces, Codex login refreshes and logs live in symphony-home.
+only. Persistent workspaces, API authentication and logs live in symphony-home.
 
 ## Install
 
 On the unstable x86_64 host, provision /etc/launch-symphony (0700) containing:
 - runner.env (0600): JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN and GH_TOKEN.
-- auth.json (0600, uid 1000): the operator's authorized Codex login bootstrap.
+- openai-api-key (0600, uid 1000): plain API key for the funded OpenAI API project.
 - ENABLED: explicit opt-in marker. Never enable this on production.
 
 The GitHub identity needs app contents/PR write and Actions read on app + infra;
 it merges through existing rules and never bypasses checks. Credentials are never
-stored in Git. The bootstrap login is copied only once: later token refreshes persist
-in the volume. To deliberately replace login, stop the runner and replace its private
-volume auth.json from a newly authorized login before restarting.
+stored in Git. Startup requires the API key file and logs in using stdin, replacing
+any previous ChatGPT login. App-server forces API authentication; there is no account
+usage fallback. The key is mounted read-only and never included in process arguments,
+Compose environment inspection, Git or logs. Codex also stores its API auth privately
+in the persistent home volume. Use a dedicated project key for this worker.
+
+To rotate: replace the host key file, preserve uid 1000/mode 0600, then recreate the
+worker with `bash scripts/deploy-symphony.sh`. Keep dispatch paused until a minimal
+API request succeeds. API charges and rate limits belong to the funded project; one
+worker and 30 turns are concurrency/turn bounds, not a dollar budget. No fast/priority
+service override is configured. Model access must be verified with the supplied key.
 
 Run `bash scripts/deploy-symphony.sh` from the checked-out infra release. Normal
 unstable app deployments also apply this service when ENABLED exists. App merges
@@ -80,6 +88,4 @@ task checkout. Concurrency stays one; no live app files, Docker socket, producti
 credentials or app database volumes are mounted. The thread API uses full access
 inside this container, never on the host.
 
-Use a separate `codex login --device-auth` in the running container for durable
-authentication; copying a desktop login can lead to revoked refresh tokens when
-both installations refresh. Pause dispatch during login and resume after success.
+API-key mode supersedes the initial ChatGPT device-login setup.
