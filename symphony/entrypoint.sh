@@ -23,6 +23,6 @@ echo 'Codex authentication: API key (API project billing)'
 cp /opt/symphony/WORKFLOW.md "$HOME/WORKFLOW.md"
 # Pause persists across app deployments and worker rebuilds.
 if [[ -f "$HOME/PAUSED" ]]; then
-  sed -i 's/active_states: \["To Do", "In Progress"\]/active_states: []/' "$HOME/WORKFLOW.md"
+  sed -i 's/^  active_states:.*/  active_states: []/' "$HOME/WORKFLOW.md"
 fi
-exec symphony --i-understand-that-this-will-be-running-without-the-usual-guardrails --logs-root "$HOME/logs" "$HOME/WORKFLOW.md"
+exec python3 /opt/symphony/supervise.py

@@ -89,3 +89,23 @@ credentials or app database volumes are mounted. The thread API uses full access
 inside this container, never on the host.
 
 API-key mode supersedes the initial ChatGPT device-login setup.
+
+## Owner review and Merge gate (supersedes earlier automatic-merge notes)
+
+To Do + symphony -> In Progress -> In Review with Jira attachments -> owner moves
+parent to Merge -> agent verifies the reviewed head, merges and watches deployment.
+After successful deployment it remains in Merge, removes symphony and records
+“Deployed — ready for owner signoff.” Owner moves it to Done. For rework, comment
+with feedback and move In Review back to To Do. No approval comment is necessary.
+
+The Merge column must map to a status named exactly Merge for parent Tasks/Stories.
+Agents never move a task into Merge. A changed PR head requires fresh evidence and
+another owner move; branch protections and current-head checks still apply.
+
+Evidence uploader runs beside Symphony without model usage. It accepts each task's
+.symphony-review-request.json, attaches synthetic screenshots/video/report directly
+to Jira, writes launch-symphony-review with exact SHA, then transitions In Review.
+Jira token stays in the uploader/orchestrator environment, not Codex's child env.
+Upload failures keep the task from completing handoff. See WORKFLOW.md for manifest.
+The uploader reads only files inside that task workspace, rejects traversal/symlink
+escapes and oversized/unapproved file formats, and verifies current required checks.
