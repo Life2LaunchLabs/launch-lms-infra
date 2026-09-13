@@ -1,6 +1,6 @@
 # Symphony on the dev server
 
-Pinned OpenAI Symphony v0.0.2 with Codex 0.116.0 runs one agent in a separate,
+Pinned OpenAI Symphony v0.0.2 with Codex 0.154.0 runs one agent in a separate,
 resource-limited Compose project. It cannot mount the Docker socket, application
 volumes, host checkout, or production credentials. Its dashboard binds host loopback
 only. Persistent workspaces, Codex login refreshes and logs live in symphony-home.
