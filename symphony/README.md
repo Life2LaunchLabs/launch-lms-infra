@@ -98,7 +98,7 @@ After successful deployment it remains in Merge, removes symphony and records
 “Deployed — ready for owner signoff.” Owner moves it to Done. For rework, comment
 with feedback and move In Review back to To Do. No approval comment is necessary.
 
-The Merge column must map to a status named exactly Merge for parent Tasks/Stories.
+The Merge column must map to a status named exactly merge (lowercase) for parent Tasks/Stories.
 Agents never move a task into Merge. A changed PR head requires fresh evidence and
 another owner move; branch protections and current-head checks still apply.
 

@@ -7,7 +7,7 @@ tracker:
     api_token: $JIRA_API_TOKEN
     project_key: BOT
   required_labels: [symphony]
-  active_states: ["To Do", "In Progress", "Merge"]
+  active_states: ["To Do", "In Progress", "merge"]
   terminal_states: [Done]
 polling:
   interval_ms: 30000
@@ -46,6 +46,9 @@ Jira BOT is the execution authority; productOS/outbox/SQLite is not a prerequisi
 
 Read AGENTS.md and docs/agent-harness.md for app architecture and checks, applying
 this newer merge policy wherever they conflict. Use native jira_rest for Jira.
+
+The board column Merge maps to the Jira status named exactly `merge` (lowercase).
+Treat references to Merge below as that status. Use live transition IDs.
 
 ## Route by current Jira state
 
