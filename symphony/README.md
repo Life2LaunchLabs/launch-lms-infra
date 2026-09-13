@@ -71,3 +71,8 @@ local dev mode, migrate/seed only this disposable database first (see browser-ui
 Never point this harness at the shared running app database. Captures stay private
 in the persistent task workspace. If memory prevents full-stack local verification,
 use the repository browser CI and retain/download screenshots for visual inspection.
+
+Codex uses its supported legacy Landlock sandbox inside Docker because the host
+disallows nested unprivileged user namespaces required by bubblewrap. Workspace
+write restrictions and approval_policy=never remain active; Docker privileges and
+namespace restrictions are not relaxed. Revalidate this flag on CLI upgrades.
