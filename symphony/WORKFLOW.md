@@ -22,7 +22,7 @@ agent:
   max_turns: 30
   max_retry_backoff_ms: 300000
 codex:
-  command: codex --config shell_environment_policy.inherit=all --config 'service_tier="fast"' --config 'model="gpt-6-astra"' --config 'model_reasoning_effort="medium"' app-server
+  command: codex --config shell_environment_policy.inherit=all --config 'forced_login_method="api"' --config 'model="gpt-6-astra"' --config 'model_reasoning_effort="medium"' app-server
   approval_policy: never
   thread_sandbox: danger-full-access
   turn_sandbox_policy:

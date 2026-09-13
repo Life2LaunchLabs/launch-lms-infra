@@ -24,7 +24,7 @@ services:
     ports: ["127.0.0.1:8788:8788"]
     volumes:
       - symphony-home:/home/node
-      - /etc/launch-symphony/auth.json:/run/secrets/codex-auth.json:ro
+      - /etc/launch-symphony/openai-api-key:/run/secrets/openai-api-key:ro
     mem_limit: 2300m
     cpus: 1.5
     pids_limit: 512
