@@ -500,3 +500,8 @@ IMAGE=launch-lms:local bash tests/rehearse-copy.sh
 Run `actionlint` on `.github/workflows/*.yaml` and validate both Compose configs
 with a synthetic `.env`/lock before publishing changes. Real cloud DNS/TLS, SSH
 secrets, package permissions, and production signoff remain deployment checks.
+
+## Dev server agent capabilities
+
+[Symphony setup and operations](symphony/README.md) adds an opt-in unattended BOT
+worker to the unstable stack. FEED collection remains in the application.

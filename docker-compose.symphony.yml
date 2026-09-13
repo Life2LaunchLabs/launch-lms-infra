@@ -1,0 +1,64 @@
+# Separate Compose project: app deploy --remove-orphans cannot stop the worker.
+name: launch-symphony
+services:
+  symphony:
+    build:
+      context: .
+      dockerfile: symphony/Dockerfile
+    depends_on:
+      test-db:
+        condition: service_healthy
+      test-redis:
+        condition: service_started
+    shm_size: 256m
+    environment:
+      UI_TEST_DATABASE_URL: postgresql+psycopg2://launchlms:launchlms@test-db:5432/launchlms_browser_test
+      UI_TEST_REDIS_URL: redis://test-redis:6379/1
+      UI_TEST_EMAIL: ui-learner@example.org
+      UI_TEST_PASSWORD: ui-test-password-123
+      UI_TEST_HTTPS: "false"
+      UI_TEST_CAPTURE: "true"
+    restart: unless-stopped
+    init: true
+    env_file: /etc/launch-symphony/runner.env
+    ports: ["127.0.0.1:8788:8788"]
+    volumes:
+      - symphony-home:/home/node
+      - /etc/launch-symphony/auth.json:/run/secrets/codex-auth.json:ro
+    mem_limit: 2300m
+    cpus: 1.5
+    pids_limit: 512
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8788/api/v1/state"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+  test-db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: launchlms
+      POSTGRES_PASSWORD: launchlms
+      POSTGRES_DB: launchlms_browser_test
+    volumes: ["symphony-test-db:/var/lib/postgresql/data"]
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U launchlms -d launchlms_browser_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  test-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    mem_limit: 64m
+volumes:
+  symphony-test-db: {}
+  symphony-home: {}

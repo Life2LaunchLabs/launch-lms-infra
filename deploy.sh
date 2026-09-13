@@ -54,3 +54,7 @@ else
 fi
 cp "$RELEASE_LOCK" .deploy-state/deployed-release.json
 echo "Verified $DEPLOY_ENVIRONMENT deployment: $LAUNCHLMS_RELEASE_VERSION ($LAUNCHLMS_RELEASE_COMMIT_SHA)"
+
+if [[ "$DEPLOY_ENVIRONMENT" == unstable && -f /etc/launch-symphony/ENABLED ]]; then
+  bash scripts/deploy-symphony.sh
+fi
