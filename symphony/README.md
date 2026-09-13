@@ -72,7 +72,14 @@ Never point this harness at the shared running app database. Captures stay priva
 in the persistent task workspace. If memory prevents full-stack local verification,
 use the repository browser CI and retain/download screenshots for visual inspection.
 
-Codex uses its supported legacy Landlock sandbox inside Docker because the host
-disallows nested unprivileged user namespaces required by bubblewrap. Workspace
-write restrictions and approval_policy=never remain active; Docker privileges and
-namespace restrictions are not relaxed. Revalidate this flag on CLI upgrades.
+Docker is the external sandbox boundary. Codex uses externalSandbox with network
+access enabled inside the non-root, capability-dropped container. Nested bubblewrap
+is unavailable on this host; legacy Landlock is incompatible with writable profiles
+in this CLI. The agent can write its entire persistent home volume, not only one
+task checkout. Concurrency stays one; no live app files, Docker socket, production
+credentials or app database volumes are mounted. The thread API uses full access
+inside this container, never on the host.
+
+Use a separate `codex login --device-auth` in the running container for durable
+authentication; copying a desktop login can lead to revoked refresh tokens when
+both installations refresh. Pause dispatch during login and resume after success.
