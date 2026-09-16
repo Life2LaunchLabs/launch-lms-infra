@@ -1,0 +1,1 @@
+"""Manifest-driven Symphony orchestration."""

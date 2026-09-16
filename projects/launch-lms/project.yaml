@@ -1,0 +1,67 @@
+schema_version: 1
+project_id: launch-lms
+display_name: Launch LMS
+source:
+  repository: Life2LaunchLabs/launch-lms
+  default_branch: main
+  delivery_branch: dev
+  policy_paths:
+    agents: AGENTS.md
+    workflow: WORKFLOW.md
+    architecture: ARCHITECTURE.md
+    product: docs/product/manifest.json
+    feedback: docs/product/feedback-policy.yaml
+tracker:
+  provider: jira
+  site: life2launch.atlassian.net
+  delivery_project: BOT
+  feedback_project: FEED
+  eligibility_label: symphony
+  statuses:
+    ready: To Do
+    active: In Progress
+    review: In Review
+    approved: Merge
+    complete: Done
+required_checks:
+  - contract
+  - api-lint / ruff
+  - api-tests / test
+  - migrations / alembic-heads
+  - Build and smoke (amd64)
+  - Build and smoke (arm64)
+candidate:
+  schema_version: 1
+  artifact_name: candidate
+  required_fields: [source_sha, image, image_digest, architectures, version, migration, build_run_id]
+deployment:
+  repository: Life2LaunchLabs/launch-lms-infra
+  workflow: deploy.yaml
+  ref: main
+environments:
+  unstable:
+    source_branch: dev
+    automatic: true
+    embed_enabled: true
+  production:
+    source_branch: main
+    automatic: false
+    embed_enabled: false
+allowed_embed_origins:
+  unstable:
+    - https://life2launch.dev
+    - https://*.life2launch.dev
+  production: []
+token_verification:
+  algorithm: EdDSA
+  issuer: launch-lms
+  audience: launch-operations
+  current_key_id: launch-ops-2026-01
+  next_key_id: launch-ops-2026-02
+modules:
+  orchestration: true
+  feedback: true
+  announcements: true
+  release_notes: true
+  deployment_observer: true
+  planning: true

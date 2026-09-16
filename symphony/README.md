@@ -64,8 +64,8 @@ large image/browser checks run in GitHub Actions. Inspect OOM state when a worke
 disappears. Expand server capacity before increasing concurrency.
 
 Upstream contract: https://github.com/openai/symphony/blob/v0.0.2/SPEC.md
-Adapter + label filter verified in v0.0.2 source. Further harness docs live in the
-application's AGENTS.md and docs/agent-harness.md. productOS is archived context,
+Adapter + label filter verified in v0.0.2 source. Further harness policy lives in the
+application's AGENTS.md and WORKFLOW.md. productOS is archived context,
 not a required sibling checkout or parallel Jira writer.
 
 ## Browser fixtures

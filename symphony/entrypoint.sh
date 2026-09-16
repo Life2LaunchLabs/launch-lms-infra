@@ -20,7 +20,13 @@ git config --global user.name "Launch LMS Symphony"
 git config --global user.email "symphony@life2launch.dev"
 gh auth setup-git
 echo 'Codex authentication: API key (API project billing)'
-cp /opt/symphony/WORKFLOW.md "$HOME/WORKFLOW.md"
+project_id="${OPERATIONS_PROJECT_ID:-launch-lms}"
+project_repo="$(PYTHONPATH=/opt/platform python3 -c "from pathlib import Path; from services.orchestrator.manifest import load_project; print(load_project('$project_id', Path('/opt/platform')).repository)")"
+project_branch="$(PYTHONPATH=/opt/platform python3 -c "from pathlib import Path; from services.orchestrator.manifest import load_project; print(load_project('$project_id', Path('/opt/platform')).data['source']['delivery_branch'])")"
+product_commit="$(gh api "repos/$project_repo/commits/$project_branch" --jq .sha)"
+PYTHONPATH=/opt/platform python3 -m services.orchestrator.render_workflow \
+  "$project_id" "$product_commit" --output "$HOME/WORKFLOW.md" --metadata "$HOME/rendered-workflow.json"
+echo "Rendered product workflow at $product_commit"
 # Pause persists across app deployments and worker rebuilds.
 if [[ -f "$HOME/PAUSED" ]]; then
   sed -i 's/^  active_states:.*/  active_states: []/' "$HOME/WORKFLOW.md"

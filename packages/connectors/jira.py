@@ -1,0 +1,100 @@
+"""Jira adapter used by platform services; credentials never reach worker shells."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import BinaryIO
+
+import httpx
+
+from packages.connectors.tracker import TrackerAdapter, TrackerIssue
+
+
+@dataclass(frozen=True)
+class JiraCredentials:
+    base_url: str
+    email: str
+    api_token: str = field(repr=False)
+
+
+class JiraAdapter(TrackerAdapter):
+    def __init__(self, credentials: JiraCredentials, transport: httpx.AsyncBaseTransport | None = None):
+        self.credentials = credentials
+        self.transport = transport
+
+    def _client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            base_url=self.credentials.base_url.rstrip("/"),
+            auth=(self.credentials.email, self.credentials.api_token),
+            headers={"Accept": "application/json"}, timeout=30, transport=self.transport,
+        )
+
+    @staticmethod
+    def _issue(value: dict) -> TrackerIssue:
+        fields = value.get("fields", {})
+        return TrackerIssue(
+            key=value["key"], summary=fields.get("summary", ""),
+            status=fields.get("status", {}).get("name", ""),
+            revision=fields.get("updated", ""), properties=value.get("properties", {}),
+        )
+
+    async def create_issue(self, project: str, summary: str, description: dict, properties: dict, idempotency_key: str) -> TrackerIssue:
+        async with self._client() as client:
+            response = await client.post("/rest/api/3/issue", json={"fields": {
+                "project": {"key": project}, "issuetype": {"name": "Task"},
+                "summary": summary, "description": description,
+            }}, headers={"X-Idempotency-Key": idempotency_key})
+            response.raise_for_status()
+            key = response.json()["key"]
+        await self.set_properties(key, properties)
+        return await self.get_issue(key)
+
+    async def get_issue(self, key: str) -> TrackerIssue:
+        async with self._client() as client:
+            response = await client.get(f"/rest/api/3/issue/{key}", params={
+                "fields": "summary,status,updated", "properties": "*all",
+            })
+            response.raise_for_status()
+            return self._issue(response.json())
+
+    async def comments(self, key: str) -> list[dict]:
+        async with self._client() as client:
+            response = await client.get(f"/rest/api/3/issue/{key}/comment", params={"orderBy": "created"})
+            response.raise_for_status()
+            return response.json().get("comments", [])
+
+    async def add_comment(self, key: str, body: dict, public: bool) -> dict:
+        async with self._client() as client:
+            if public:
+                response = await client.post(f"/rest/servicedeskapi/request/{key}/comment", json={"body": body, "public": True})
+            else:
+                response = await client.post(f"/rest/api/3/issue/{key}/comment", json={"body": body})
+            response.raise_for_status()
+            return response.json()
+
+    async def attach(self, key: str, filename: str, content_type: str, stream: BinaryIO) -> dict:
+        async with self._client() as client:
+            response = await client.post(
+                f"/rest/api/3/issue/{key}/attachments",
+                headers={"X-Atlassian-Token": "no-check"},
+                files={"file": (filename, stream, content_type)},
+            )
+            response.raise_for_status()
+            values = response.json()
+            return values[0] if values else {}
+
+    async def transition(self, key: str, status: str) -> None:
+        async with self._client() as client:
+            response = await client.get(f"/rest/api/3/issue/{key}/transitions")
+            response.raise_for_status()
+            transition = next((item for item in response.json().get("transitions", []) if item.get("to", {}).get("name") == status), None)
+            if not transition:
+                raise ValueError(f"transition to {status!r} is unavailable for {key}")
+            result = await client.post(f"/rest/api/3/issue/{key}/transitions", json={"transition": {"id": transition["id"]}})
+            result.raise_for_status()
+
+    async def set_properties(self, key: str, properties: dict) -> None:
+        async with self._client() as client:
+            for name, value in properties.items():
+                response = await client.put(f"/rest/api/3/issue/{key}/properties/{name}", json=value)
+                response.raise_for_status()

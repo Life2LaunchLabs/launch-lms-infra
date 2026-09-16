@@ -1,0 +1,64 @@
+name: launch-operations
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: /etc/launch-operations/postgres.env
+    volumes:
+      - operations-postgres:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U operations -d operations"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 768m
+  control-plane-api:
+    build:
+      context: ../..
+      dockerfile: apps/control-plane/api/Dockerfile
+    restart: unless-stopped
+    env_file: /etc/launch-operations/control-plane.env
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [data, web, status]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+  control-plane-web:
+    build:
+      context: ../..
+      dockerfile: apps/control-plane/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      control-plane-api: {condition: service_healthy}
+    networks: [web]
+    mem_limit: 128m
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    env_file: /etc/launch-operations/control-plane.env
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - operations-caddy-data:/data
+      - operations-caddy-config:/config
+    networks: [web]
+    mem_limit: 256m
+networks:
+  data: {internal: true}
+  web: {}
+  status:
+    name: launch-operations-status
+volumes:
+  operations-postgres: {}
+  operations-caddy-data: {}
+  operations-caddy-config: {}

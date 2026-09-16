@@ -1,0 +1,10 @@
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color: #17211b; background: #edf3ed; }
+body { margin: 0; }
+main { width: min(960px, calc(100% - 40px)); margin: 64px auto; }
+header { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
+h1 { font-size: clamp(2.5rem, 7vw, 5.5rem); line-height: .92; margin: 0 0 32px; max-width: 760px; }
+.eyebrow { color: #38664a; font-weight: 700; text-transform: uppercase; letter-spacing: .12em; }
+section { background: #fff; border: 1px solid #cad7cc; border-radius: 20px; padding: 28px; margin: 20px 0; box-shadow: 0 16px 40px #18301e12; }
+.button { display: inline-block; background: #173f29; color: #fff; padding: 12px 18px; border-radius: 999px; text-decoration: none; font-weight: 700; }
+pre { overflow: auto; background: #14251a; color: #d7f3dd; padding: 18px; border-radius: 12px; }
+@media (max-width: 600px) { main { margin: 32px auto; } header { display: block; } }

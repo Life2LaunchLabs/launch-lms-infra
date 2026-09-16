@@ -1,3 +1,5 @@
+<!-- Legacy bootstrap reference only. The worker now renders WORKFLOW.md from
+services/orchestrator/runtime.yaml and the exact product-owned WORKFLOW.md commit. -->
 ---
 tracker:
   kind: jira

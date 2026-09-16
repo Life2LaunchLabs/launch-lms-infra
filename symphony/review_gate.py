@@ -10,10 +10,17 @@ import time
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
+import sys
+PLATFORM_ROOT = Path('/opt/platform') if Path('/opt/platform').exists() else Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PLATFORM_ROOT))
+from services.orchestrator.manifest import load_project
+
 ROOT = Path.home() / 'workspaces'
 PROPERTY = 'launch-symphony-review'
-REPO = 'Life2LaunchLabs/launch-lms'
-REQUIRED = {'contract', 'api-lint / ruff', 'api-tests / test', 'migrations / alembic-heads', 'Build and smoke (amd64)', 'Build and smoke (arm64)'}
+MANIFEST = load_project(os.environ.get('OPERATIONS_PROJECT_ID', 'launch-lms'), PLATFORM_ROOT)
+REPO = MANIFEST.repository
+REQUIRED = set(MANIFEST.data['required_checks'])
+ISSUE = re.compile(r'^' + re.escape(MANIFEST.data['tracker']['delivery_project']) + r'-\d+$')
 
 
 def text_of(node):
@@ -99,7 +106,7 @@ def submit(path):
     if path.is_symlink():
         raise ValueError('Manifest must not be a symlink')
     issue = request['issue']
-    if not re.fullmatch(r'BOT-\d+', issue) or path.parent.name != issue:
+    if not ISSUE.fullmatch(issue) or path.parent.name != issue:
         raise ValueError('Issue must match the task workspace')
     sha = request['sha']
     if not re.fullmatch(r'[a-f0-9]{40}', sha):
@@ -117,6 +124,8 @@ def submit(path):
     pr = pr_info(int(request['pr']))
     check_pr(pr, sha)
     paths = evidence_paths(path.parent, request['files'])
+    workflow_metadata_path = Path.home() / 'rendered-workflow.json'
+    workflow_metadata = json.loads(workflow_metadata_path.read_text()) if workflow_metadata_path.exists() else {}
     if not any(p.suffix == '.md' for p in paths):
         raise ValueError('A Markdown review report is required')
     if request.get('ui_change') and not any(p.suffix.lower() in {'.png', '.jpg', '.jpeg'} for p in paths):
@@ -131,8 +140,11 @@ def submit(path):
             saved['attachments'][relative] = upload(issue, file)
             progress.write_text(json.dumps(saved))
     links = ['%s: %s' % (name, ', '.join(x['content'] for x in entries)) for name, entries in saved['attachments'].items()]
+    policy_line = ('\nPolicy commit/hash: ' + workflow_metadata.get('product_commit', 'unknown') +
+                   ' / ' + workflow_metadata.get('rendered_workflow_sha256', 'unknown'))
     message = ('Ready for owner review — NOT merged or deployed.\n' + str(request['summary']) +
                '\nPR: ' + pr['url'] + '\nReviewed commit: ' + sha + '\nEvidence attached:\n' + '\n'.join(links) +
+               policy_line +
                '\n\nReview the report/screenshots and PR. Move this issue to Merge to approve this exact revision.' +
                '\n\nFor changes, describe them and move this issue to To Do. Done remains your final product signoff.')
     check_pr(pr_info(int(request['pr'])), sha)
@@ -140,7 +152,9 @@ def submit(path):
     if current['status']['name'] != 'In Progress' or 'symphony' not in current['labels']:
         raise ValueError('Owner changed task state during evidence upload')
     posted = comment(issue, message)
-    record = {'sha': sha, 'pr': pr['number'], 'submitted_at': posted['created'], 'comment_id': posted['id']}
+    record = {'sha': sha, 'pr': pr['number'], 'submitted_at': posted['created'], 'comment_id': posted['id'],
+              'product_policy_commit': workflow_metadata.get('product_commit'),
+              'rendered_workflow_sha256': workflow_metadata.get('rendered_workflow_sha256')}
     jira('PUT', f'issue/{issue}/properties/{PROPERTY}', record)
     transition(issue, 'In Review')
     path.rename(path.with_name('.symphony-review-submitted.json'))
