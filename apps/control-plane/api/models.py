@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, JSON, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -71,6 +71,21 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
     __table_args__ = (UniqueConstraint("project_id", "operation", "key_hash"),)
+
+
+class PendingAttachment(Base):
+    __tablename__ = "pending_attachments"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    operation_id: Mapped[int] = mapped_column(ForeignKey("idempotency_records.id", ondelete="CASCADE"), nullable=False)
+    slot: Mapped[int] = mapped_column(Integer, nullable=False)
+    opaque_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    tracker_attachment_id: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint("operation_id", "slot"),)
 
 
 class AgentRun(Base):

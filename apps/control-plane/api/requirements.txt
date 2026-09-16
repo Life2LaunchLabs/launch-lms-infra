@@ -3,6 +3,7 @@ httpx==0.28.1
 itsdangerous==2.2.0
 PyJWT[crypto]==2.10.1
 psycopg[binary]==3.2.9
+python-multipart==0.0.20
 PyYAML==6.0.3
 SQLAlchemy==2.0.43
 uvicorn[standard]==0.35.0

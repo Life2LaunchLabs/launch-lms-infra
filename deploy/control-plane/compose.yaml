@@ -42,6 +42,19 @@ services:
     mem_limit: 128m
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+  feedback-worker:
+    build:
+      context: ../..
+      dockerfile: apps/control-plane/api/Dockerfile
+    command: ["python", "-m", "services.feedback.worker"]
+    restart: unless-stopped
+    env_file: /etc/launch-operations/control-plane.env
+    depends_on:
+      control-plane-api: {condition: service_healthy}
+    networks: [data]
+    mem_limit: 256m
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped

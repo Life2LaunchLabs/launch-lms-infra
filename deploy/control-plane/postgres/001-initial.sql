@@ -44,6 +44,19 @@ CREATE TABLE IF NOT EXISTS idempotency_records (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(project_id, operation, key_hash)
 );
+CREATE TABLE IF NOT EXISTS pending_attachments (
+  id varchar(36) PRIMARY KEY,
+  operation_id bigint NOT NULL REFERENCES idempotency_records(id) ON DELETE CASCADE,
+  slot integer NOT NULL,
+  opaque_user_id varchar(128) NOT NULL,
+  filename varchar(255) NOT NULL,
+  content_type varchar(64) NOT NULL,
+  content bytea NOT NULL,
+  status varchar(32) NOT NULL DEFAULT 'pending',
+  tracker_attachment_id varchar(128),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation_id, slot)
+);
 CREATE TABLE IF NOT EXISTS agent_runs (
   id uuid PRIMARY KEY,
   project_id varchar(64) NOT NULL REFERENCES projects(id),

@@ -27,5 +27,12 @@ body[data-embed='true'] #root { width: 100vw; height: 100dvh; }
 .ops-feedback textarea { box-sizing: border-box; width: 100%; min-height: 150px; resize: vertical; border: 1px solid #bbc8bd; border-radius: 14px; padding: 14px; font: inherit; }
 .ops-feedback button { justify-self: start; border: 0; border-radius: 999px; padding: 12px 20px; color: white; background: #173f29; font: inherit; font-weight: 750; }
 .ops-feedback button:disabled { opacity: .45; }
+.ops-conversations { border-top: 1px solid #d7ded8; margin-top: 20px; padding-top: 20px; }
+.ops-thread, .ops-items article { border: 1px solid #d7ded8; border-radius: 14px; margin: 12px 0; padding: 14px; }
+.ops-thread header { display: flex; justify-content: space-between; gap: 16px; }
+.ops-thread textarea { min-height: 80px; }
+.ops-thread p, .ops-items p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ops-resolution { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ops-items { display: grid; gap: 4px; }
 .ops-empty, .ops-unavailable { padding: 16px; color: #647069; font-size: 13px; }
 @media (prefers-reduced-motion: no-preference) { .ops-panel { animation: ops-enter 140ms ease-out; } @keyframes ops-enter { from { opacity: 0; transform: translateY(8px); } } }
