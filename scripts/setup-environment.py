@@ -36,6 +36,9 @@ values = {
     'LAUNCHLMS_COOKIE_DOMAIN': domain, 'NEXT_PUBLIC_LAUNCHLMS_DOMAIN': domain,
     'LAUNCHLMS_COOKIE_SCOPE': cookie_scope,
     'NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE': cookie_scope,
+    # Temporary migration flag; remove after the former 30-day refresh-cookie
+    # lifetime has elapsed and browser evidence confirms parent-cookie expiry.
+    'NEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN': topology['dns']['app_zone'],
     'NEXT_PUBLIC_LAUNCHLMS_TOP_DOMAIN': domain,
     'NEXT_PUBLIC_LAUNCHLMS_API_URL': '',
     'NEXT_PUBLIC_LAUNCHLMS_BACKEND_URL': f'https://{domain}/',

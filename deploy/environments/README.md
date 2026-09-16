@@ -50,3 +50,9 @@ for the operations apex and must not be pointed at the control plane.
 
 Changing the topology is a deployment-config change and runs infrastructure
 validation. Secrets remain in the protected GitHub `operations` Environment.
+
+During the host-only migration, environment setup writes
+`NEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN=life2launch.app`. The application
+uses it only in host-only mode to expire former parent-domain auth and routing
+cookies. Keep it configured for at least the old 30-day refresh-token lifetime,
+verify cookie absence in browser evidence, then remove it from both deployments.

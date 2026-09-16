@@ -9,6 +9,8 @@ if env.get('LAUNCHLMS_DOMAIN') == topology['application']['unstable']['base_doma
     for key in ('LAUNCHLMS_COOKIE_SCOPE', 'NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE'):
         if env.get(key) != 'host-only':
             raise ValueError(f'{key} must be host-only on nested unstable')
+    if env.get('NEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN', '').lstrip('.') != topology['dns']['app_zone']:
+        raise ValueError('Nested unstable must expire legacy cookies from the application parent domain')
     if not topology['application']['unstable']['cutover_approved']:
         raise ValueError('Nested unstable application cutover has not been approved')
 if env.get('LAUNCHLMS_DEVELOPMENT_MODE') != 'false' or env.get('LAUNCHLMS_ENV') != 'prod':
