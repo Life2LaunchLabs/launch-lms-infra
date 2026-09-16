@@ -14,7 +14,7 @@ on:
       action:
         description: Review or apply cloud/host state
         type: choice
-        options: [prepare-state, plan, apply, configure, verify]
+        options: [prepare-state, plan, adopt-plan, apply, configure, verify]
         default: plan
         required: true
       adopt_droplet_id:
@@ -90,7 +90,7 @@ jobs:
           echo 'Private state-bucket versioning is enabled.'
 
   cloud:
-    if: github.event_name == 'workflow_dispatch' && (inputs.action == 'plan' || inputs.action == 'apply')
+    if: github.event_name == 'workflow_dispatch' && (inputs.action == 'plan' || inputs.action == 'adopt-plan' || inputs.action == 'apply')
     needs: validate
     runs-on: ubuntu-latest
     environment: operations
@@ -126,10 +126,17 @@ jobs:
       - name: Initialize locked remote state
         run: tofu init -backend-config="bucket=${{ vars.OPERATIONS_STATE_BUCKET }}"
       - name: Adopt the existing droplet
-        if: inputs.action == 'apply' && inputs.adopt_droplet_id != ''
+        if: inputs.action == 'adopt-plan' || (inputs.action == 'apply' && inputs.adopt_droplet_id != '')
         env:
+          CONTROL_PLANE_ACTION: ${{ inputs.action }}
           ADOPT_DROPLET_ID: ${{ inputs.adopt_droplet_id }}
         run: |
+          if [ "$CONTROL_PLANE_ACTION" = 'adopt-plan' ]; then
+            test -n "$ADOPT_DROPLET_ID" || {
+              echo 'Existing droplet ID required for adopt-plan' >&2
+              exit 1
+            }
+          fi
           if ! tofu state show digitalocean_droplet.operations >/dev/null 2>&1; then
             tofu import digitalocean_droplet.operations "$ADOPT_DROPLET_ID"
           fi

@@ -13,9 +13,9 @@ and the Symphony status network are never publicly published.
 Cloud resources live under `deploy/control-plane/iac`; host configuration lives
 under `deploy/control-plane/ansible`. Do not bootstrap the server with an ad-hoc
 shell session. The protected `Control-plane host` workflow validates both on pull
-requests and exposes five explicit operations: `prepare-state`, `plan`, `apply`,
-`configure`, and `verify`. Cloud and host mutations require approval through the `operations`
-GitHub Environment.
+requests and exposes six explicit operations: `prepare-state`, `plan`,
+`adopt-plan`, `apply`, `configure`, and `verify`. Cloud and host mutations
+require approval through the `operations` GitHub Environment.
 
 The accepted initial host is `launch-operations-1` in SFO3: Ubuntu 24.04 x86_64,
 8 GiB RAM, four vCPUs, provider backups and monitoring. OpenTofu manages the
@@ -38,11 +38,12 @@ The SSH private key is a dedicated operations-Actions identity, not an operator'
 personal key. Its public half is installed idempotently alongside operator access.
 The SSH host-key secret is the complete pinned known-hosts line, not a keyscan
 performed during deployment. The initial manually-created droplet is adopted once
-by dispatching `apply` with droplet ID `601077988`; `prevent_destroy` blocks an
-accidental replacement. Review the plan before approving apply. Thereafter the
-same workflow owns drift correction. DigitalOcean does not permit changing a
-Droplet's creation-time SSH keys in place, so an SSH-key mismatch must never be
-accepted as an unreviewed replacement.
+by dispatching `adopt-plan` with droplet ID `601077988`; this records it in remote
+state and produces a post-adoption plan without applying cloud changes.
+`prevent_destroy` blocks an accidental replacement. Review that plan before
+dispatching `apply`. Thereafter the same workflow owns drift correction.
+DigitalOcean does not permit changing a Droplet's creation-time SSH keys in
+place, so an SSH-key mismatch must never be accepted as an unreviewed replacement.
 
 ## Repository-managed service deployment
 
