@@ -189,14 +189,19 @@ jobs:
         run: >-
           ssh-keygen -lf "$RUNNER_TEMP/operations-key.pub" |
           awk '{print "Operations Actions SSH key: " $1 " bits " $NF}'
+      - name: Preserve the complete SSH public key as JSON extra variables
+        env:
+          OPERATIONS_REVISION: ${{ github.sha }}
+        run: |
+          python -c 'import json, os; from pathlib import Path; root = Path(os.environ["RUNNER_TEMP"]); (root / "operations-vars.json").write_text(json.dumps({"operations_revision": os.environ["OPERATIONS_REVISION"], "operations_admin_public_key": (root / "operations-key.pub").read_text().strip()}))'
+          chmod 0600 "$RUNNER_TEMP/operations-vars.json"
       - name: Configure the exact repository revision
         if: inputs.action == 'configure'
         working-directory: deploy/control-plane/ansible
         run: >-
           ansible-playbook bootstrap.yml
           --private-key "$RUNNER_TEMP/operations-key"
-          --extra-vars "operations_revision=${{ github.sha }}"
-          --extra-vars "operations_admin_public_key=$(cat "$RUNNER_TEMP/operations-key.pub")"
+          --extra-vars "@$RUNNER_TEMP/operations-vars.json"
       - name: Verify the managed host contract
         working-directory: deploy/control-plane/ansible
         run: ansible-playbook verify.yml --private-key "$RUNNER_TEMP/operations-key"
