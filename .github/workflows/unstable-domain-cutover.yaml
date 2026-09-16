@@ -74,7 +74,8 @@ jobs:
               exit 0
             fi
             python3 scripts/migrate-unstable-domain.py apply
-            if bash deploy.sh && python3 scripts/verify-public-domain.py; then
+            if bash deploy.sh && python3 scripts/verify-public-domain.py && \
+                python3 scripts/verify-live-session-handoff.py; then
               python3 scripts/migrate-unstable-domain.py status
               exit 0
             fi
