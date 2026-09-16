@@ -1,0 +1,64 @@
+name: Deploy control plane
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-control-plane
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install the pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh" "$RUNNER_TEMP/launch-operations-secrets"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Materialize runtime files without logging values
+        env:
+          CONTROL_PLANE_ENV: ${{ secrets.OPERATIONS_CONTROL_PLANE_ENV }}
+          POSTGRES_ENV: ${{ secrets.OPERATIONS_POSTGRES_ENV }}
+        run: |
+          test -n "$CONTROL_PLANE_ENV" && test -n "$POSTGRES_ENV"
+          printf '%s\n' "$CONTROL_PLANE_ENV" > "$RUNNER_TEMP/launch-operations-secrets/control-plane.env"
+          printf '%s\n' "$POSTGRES_ENV" > "$RUNNER_TEMP/launch-operations-secrets/postgres.env"
+          chmod 0600 "$RUNNER_TEMP/launch-operations-secrets/"*.env
+      - name: Transfer runtime files
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+        run: >-
+          scp -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes
+          "$RUNNER_TEMP/launch-operations-secrets/control-plane.env"
+          "$RUNNER_TEMP/launch-operations-secrets/postgres.env"
+          "root@${OPERATIONS_HOST}:/tmp/"
+      - name: Deploy the exact protected-branch revision
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+          INFRA_REVISION: ${{ github.sha }}
+        run: |
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            "INFRA_REVISION=${INFRA_REVISION} bash -s" <<'REMOTE'
+          set -euo pipefail
+          install -m 0600 -o root -g root /tmp/control-plane.env /etc/launch-operations/control-plane.env
+          install -m 0600 -o root -g root /tmp/postgres.env /etc/launch-operations/postgres.env
+          rm -f /tmp/control-plane.env /tmp/postgres.env
+          cd /opt/launch-operations
+          exec 9>/var/lock/launch-operations-deploy.lock
+          flock -w 900 9
+          runuser -u launchops -- git fetch origin main
+          runuser -u launchops -- git merge-base --is-ancestor "$INFRA_REVISION" origin/main
+          runuser -u launchops -- git checkout --detach "$INFRA_REVISION"
+          bash scripts/deploy-control-plane.sh
+          REMOTE
