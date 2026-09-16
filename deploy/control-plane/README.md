@@ -59,6 +59,11 @@ resolve the configured domain to the expected host. Only then does it build/star
 Compose and verify public HTTPS. The workflow is manual until backup/restore and
 deployment observation have completed their first live acceptance cycle.
 
+Public origins and the staged DNS cutover are defined in
+`deploy/environments/launch-lms.yaml`. The deployment refuses to start while its
+`operations_apex_cutover` gate is false. Follow `deploy/environments/README.md`;
+do not temporarily publish the control plane on a second hostname.
+
 ## Required host configuration
 
 Create `/etc/launch-operations` mode `0700` with:

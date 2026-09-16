@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from env_file import read_env
+from environment_topology import load_topology
 
 REQUIRED = (
     "OPERATIONS_DATABASE_URL", "OPERATIONS_PUBLIC_URL", "OPERATIONS_DOMAIN",
@@ -21,7 +22,13 @@ REQUIRED = (
 )
 
 
-def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.getaddrinfo) -> None:
+def require_operations_cutover(topology: dict | None) -> None:
+    if not topology or not topology["dns"].get("operations_apex_cutover"):
+        raise ValueError("Operations apex cutover is not approved in the environment topology")
+
+
+def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.getaddrinfo,
+             topology: dict | None = None) -> None:
     missing = [name for name in REQUIRED if not control.get(name) or
                "CONFIGURE" in control[name] or "CHANGE_ME" in control[name]]
     for name in ("POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD"):
@@ -37,6 +44,12 @@ def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.
     if public.scheme != "https" or public.hostname != control["OPERATIONS_DOMAIN"] or public.path not in ("", "/"):
         raise ValueError("Public URL must be the HTTPS operations domain without a path")
     expected = str(ipaddress.ip_address(control["OPERATIONS_EXPECTED_IP"]))
+    if topology:
+        operations = topology["operations"]
+        if control["OPERATIONS_PUBLIC_URL"] != operations["public_url"]:
+            raise ValueError("Runtime operations URL differs from versioned environment topology")
+        if expected != operations["expected_ipv4"]:
+            raise ValueError("Runtime operations IP differs from versioned environment topology")
     database = urlparse(control["OPERATIONS_DATABASE_URL"])
     if database.scheme != "postgresql+psycopg" or database.hostname != "postgres":
         raise ValueError("Database URL must target the private Compose PostgreSQL service")
@@ -55,9 +68,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("control", type=Path)
     parser.add_argument("postgres", type=Path)
+    parser.add_argument("--topology", type=Path)
+    parser.add_argument("--require-operations-cutover", action="store_true")
     args = parser.parse_args()
     try:
-        validate(read_env(args.control), read_env(args.postgres))
+        topology = load_topology(args.topology) if args.topology else None
+        if args.require_operations_cutover:
+            require_operations_cutover(topology)
+        validate(read_env(args.control), read_env(args.postgres), topology=topology)
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from error
     print("Control-plane runtime contract is valid.")

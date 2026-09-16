@@ -5,6 +5,8 @@ on:
     paths:
       - deploy/control-plane/ansible/**
       - deploy/control-plane/iac/**
+      - deploy/environments/**
+      - scripts/environment_topology.py
       - .github/workflows/control-plane-host.yaml
   workflow_dispatch:
     inputs:
@@ -16,6 +18,10 @@ on:
         required: true
       adopt_droplet_id:
         description: Existing droplet ID to import before the first apply
+        type: string
+        required: false
+      adopt_operations_apex_record_id:
+        description: Existing life2launch.dev apex record ID; use only for the approved cutover apply
         type: string
         required: false
 
@@ -82,6 +88,21 @@ jobs:
         run: |
           if ! tofu state show digitalocean_droplet.operations >/dev/null 2>&1; then
             tofu import digitalocean_droplet.operations "$ADOPT_DROPLET_ID"
+          fi
+      - name: Adopt the existing operations apex record
+        if: inputs.action == 'apply'
+        env:
+          APEX_RECORD_ID: ${{ inputs.adopt_operations_apex_record_id }}
+        run: |
+          if tofu state show 'digitalocean_record.operations_apex[0]' >/dev/null 2>&1; then
+            exit 0
+          fi
+          if grep -Eq '^  operations_apex_cutover: true$' ../../environments/launch-lms.yaml; then
+            test -n "$APEX_RECORD_ID" || {
+              echo 'Existing .dev apex DNS record ID required before cutover apply' >&2
+              exit 1
+            }
+            tofu import 'digitalocean_record.operations_apex[0]' "life2launch.dev,${APEX_RECORD_ID}"
           fi
       - name: Produce the reviewed plan
         run: tofu plan -lock-timeout=5m -out=control-plane.tfplan

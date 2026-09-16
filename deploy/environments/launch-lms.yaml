@@ -1,0 +1,29 @@
+schema_version: 1
+project_id: launch-lms
+
+operations:
+  public_url: https://life2launch.dev
+  expected_ipv4: 143.110.225.231
+
+application:
+  cookie_scope: host-only
+  production:
+    base_domain: life2launch.app
+    origin_template: https://{organization}.life2launch.app
+  unstable:
+    base_domain: unstable.life2launch.app
+    origin_template: https://{organization}.unstable.life2launch.app
+    operations_surface_url: https://life2launch.dev
+
+dns:
+  app_zone: life2launch.app
+  operations_zone: life2launch.dev
+  unstable_ipv4: 137.184.34.50
+  records:
+    operations: "@"
+    unstable_apex: unstable
+    unstable_wildcard: "*.unstable"
+  # The old unstable service still uses the .dev apex. Change this only after
+  # the nested unstable hostname has passed its cutover checks; control-plane
+  # deployment is gated on the same value.
+  operations_apex_cutover: false

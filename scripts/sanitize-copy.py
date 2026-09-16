@@ -78,8 +78,10 @@ if __name__ == '__main__':
     if engine.url.host != 'db' or not re.fullmatch(r'launchlms_refresh_[0-9]+', engine.url.database or ''):
         raise SystemExit('Refusing to sanitize anything except a fresh local refresh database')
     source, target = os.environ['SOURCE_DOMAIN'], os.environ['TARGET_DOMAIN']
-    if not source or not target or source == target or target.endswith('.'+source):
-        raise SystemExit('A separate test domain is required')
+    if not source or not target or source == target:
+        raise SystemExit('Production and unstable domains must differ')
+    if target.endswith('.'+source) and os.environ.get('LAUNCHLMS_COOKIE_SCOPE') != 'host-only':
+        raise SystemExit('Nested environments require host-only cookies')
     with engine.begin() as conn:
         sanitize(conn, source, target)
     print('Copied database sanitized; password hashes and learning data retained.')

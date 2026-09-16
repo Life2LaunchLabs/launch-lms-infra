@@ -1,5 +1,45 @@
 locals {
-  tags = ["launch-operations", "control-plane"]
+  tags     = ["launch-operations", "control-plane"]
+  topology = yamldecode(file("${path.module}/../../environments/launch-lms.yaml"))
+}
+
+resource "digitalocean_record" "unstable_apex" {
+  domain = local.topology.dns.app_zone
+  type   = "A"
+  name   = local.topology.dns.records.unstable_apex
+  value  = local.topology.dns.unstable_ipv4
+  ttl    = 300
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+resource "digitalocean_record" "unstable_wildcard" {
+  domain = local.topology.dns.app_zone
+  type   = "A"
+  name   = local.topology.dns.records.unstable_wildcard
+  value  = local.topology.dns.unstable_ipv4
+  ttl    = 300
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# The .dev apex remains on the old unstable host until the repository topology
+# explicitly records acceptance of the nested unstable deployment.
+resource "digitalocean_record" "operations_apex" {
+  count  = local.topology.dns.operations_apex_cutover ? 1 : 0
+  domain = local.topology.dns.operations_zone
+  type   = "A"
+  name   = local.topology.dns.records.operations
+  value  = digitalocean_droplet.operations.ipv4_address
+  ttl    = 300
+
+  lifecycle {
+    prevent_destroy = true
+  }
 }
 
 data "digitalocean_ssh_key" "operations" {

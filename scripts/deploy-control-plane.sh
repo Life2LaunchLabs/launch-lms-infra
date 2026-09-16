@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 [[ "$(stat -c '%a' /etc/launch-operations/postgres.env)" == 600 ]] || { echo 'Unsafe PostgreSQL environment mode' >&2; exit 1; }
 
 python3 scripts/validate-control-plane-env.py \
-  /etc/launch-operations/control-plane.env /etc/launch-operations/postgres.env
+  /etc/launch-operations/control-plane.env /etc/launch-operations/postgres.env \
+  --topology deploy/environments/launch-lms.yaml --require-operations-cutover
 
 docker compose -f deploy/control-plane/compose.yaml config --quiet
 docker compose -f deploy/control-plane/compose.yaml up -d --build --wait --wait-timeout 300

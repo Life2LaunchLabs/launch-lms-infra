@@ -12,6 +12,8 @@ import sys
 spec = importlib.util.spec_from_file_location('release_env', Path(__file__).with_name('release-env.py'))
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+from environment_topology import load_topology
+
 if len(sys.argv) not in (2, 3) or sys.argv[1] not in ('production', 'unstable'):
     raise SystemExit('Usage: bash setup.sh production | bash setup.sh unstable /absolute/path/candidate.json')
 environment = sys.argv[1]
@@ -19,19 +21,17 @@ if environment == 'production' and len(sys.argv) != 2:
     raise SystemExit('Production setup uses the checked-in release.lock.json')
 source = Path(sys.argv[2]) if len(sys.argv) == 3 else Path('release.lock.json')
 lock = module.validate(json.loads(source.read_text()), environment)
-domain = input('Domain (owned DNS zone, no scheme or wildcard): ').strip().lower()
-if not re.fullmatch(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}', domain):
-    raise SystemExit('Invalid DNS hostname')
-if environment == 'unstable':
-    production = input('Production domain (must be a separate domain): ').strip().lower()
-    if not production or domain == production or domain.endswith('.'+production) or production.endswith('.'+domain):
-        raise SystemExit('Use a separate test domain, outside the production cookie domain')
+topology = load_topology(Path(__file__).resolve().parents[1] / 'deploy/environments/launch-lms.yaml')
+domain = topology['application'][environment]['base_domain']
+cookie_scope = topology['application']['cookie_scope']
 values = {
     'LAUNCHLMS_SITE_NAME': 'Launch LMS — Unstable' if environment == 'unstable' else 'Launch LMS',
     'LAUNCHLMS_DOMAIN': domain, 'LAUNCHLMS_FRONTEND_DOMAIN': domain,
     'LAUNCHLMS_ALLOWED_ORIGINS': 'https://'+domain,
     'LAUNCHLMS_ALLOWED_REGEXP': r'^https://([a-z0-9-]+\.)?'+re.escape(domain)+'$',
     'LAUNCHLMS_COOKIE_DOMAIN': domain, 'NEXT_PUBLIC_LAUNCHLMS_DOMAIN': domain,
+    'LAUNCHLMS_COOKIE_SCOPE': cookie_scope,
+    'NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE': cookie_scope,
     'NEXT_PUBLIC_LAUNCHLMS_TOP_DOMAIN': domain,
     'NEXT_PUBLIC_LAUNCHLMS_API_URL': '',
     'NEXT_PUBLIC_LAUNCHLMS_BACKEND_URL': f'https://{domain}/',
@@ -49,6 +49,19 @@ values = {
     'LAUNCHLMS_CONTENT_DELIVERY_TYPE': 'filesystem',
     'LAUNCHLMS_REDIS_CONNECTION_STRING': 'redis://redis:6379/0',
 }
+if environment == 'unstable':
+    operations_url = topology['application']['unstable']['operations_surface_url']
+    values.update(
+        # Flip both flags together after the control plane and embed contract
+        # pass their own acceptance checks; the old toolbar remains available.
+        LAUNCHLMS_OPERATIONS_SURFACE_ENABLED='false',
+        LAUNCHLMS_OPERATIONS_ENVIRONMENT='unstable',
+        LAUNCHLMS_OPERATIONS_PROJECT=topology['project_id'],
+        NEXT_PUBLIC_OPERATIONS_SURFACE_ENABLED='false',
+        NEXT_PUBLIC_OPERATIONS_ENVIRONMENT='unstable',
+        NEXT_PUBLIC_OPERATIONS_PROJECT=topology['project_id'],
+        NEXT_PUBLIC_OPERATIONS_PLATFORM_URL=operations_url,
+    )
 if len(values['LAUNCHLMS_INITIAL_ADMIN_PASSWORD']) < 12 or not values['DO_AUTH_TOKEN']:
     raise SystemExit('An administrator password and DNS token are required')
 values['LAUNCHLMS_SQL_CONNECTION_STRING'] = f"postgresql+psycopg2://launchlms:{values['POSTGRES_PASSWORD']}@db:5432/launchlms"

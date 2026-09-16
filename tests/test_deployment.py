@@ -59,7 +59,7 @@ class DeploymentTests(unittest.TestCase):
     def fixture(self, path, *, traversal=False):
         snap=path/'snapshot'; snap.mkdir()
         (path/'.deployment-environment').write_text('unstable')
-        (path/'.env').write_text("LAUNCHLMS_DOMAIN=test.example.net\nLAUNCHLMS_AUTH_JWT_SECRET_KEY="+'t'*40+"\nLAUNCHLMS_SQL_CONNECTION_STRING=postgresql+psycopg2://launchlms:password@db:5432/launchlms\n")
+        (path/'.env').write_text("LAUNCHLMS_DOMAIN=test.example.net\nLAUNCHLMS_COOKIE_SCOPE=shared-domain\nNEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE=shared-domain\nLAUNCHLMS_AUTH_JWT_SECRET_KEY="+'t'*40+"\nLAUNCHLMS_SQL_CONNECTION_STRING=postgresql+psycopg2://launchlms:password@db:5432/launchlms\n")
         (snap/'database.dump').write_bytes(b'fixture')
         (snap/'release.json').write_text('{}')
         with tarfile.open(snap/'content.tar.gz', 'w:gz') as tar:
@@ -93,6 +93,25 @@ class DeploymentTests(unittest.TestCase):
                 result=subprocess.run([sys.executable,str(ROOT/'scripts/prepare-refresh.py'),str(snap),'20260908120000'],cwd=path,capture_output=True)
                 self.assertNotEqual(0,result.returncode)
                 self.assertFalse((path/'.deploy-state/refresh.env').exists())
+
+    def test_nested_unstable_domain_requires_and_accepts_host_only_cookies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp); snap=self.fixture(path)
+            content=(path/'.env').read_text().replace('test.example.net','unstable.production.example.org')
+            content=content.replace('LAUNCHLMS_COOKIE_SCOPE=shared-domain','LAUNCHLMS_COOKIE_SCOPE=host-only')
+            content=content.replace('NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE=shared-domain','NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE=host-only')
+            (path/'.env').write_text(content)
+            subprocess.run([sys.executable,str(ROOT/'scripts/prepare-refresh.py'),str(snap),'20260908120000'],cwd=path,check=True)
+            proposed=(path/'.deploy-state/refresh.env').read_text()
+            self.assertIn("LAUNCHLMS_DOMAIN='unstable.production.example.org'", proposed)
+
+    def test_nested_unstable_deployment_rejects_shared_cookies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path/'.env').write_text('LAUNCHLMS_DOMAIN=unstable.life2launch.app\nLAUNCHLMS_COOKIE_SCOPE=shared-domain\n')
+            result = subprocess.run([sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, capture_output=True, text=True)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn('LAUNCHLMS_COOKIE_SCOPE must be host-only', result.stderr)
 
     def test_edge_secrets_are_excluded_from_application_env(self):
         with tempfile.TemporaryDirectory() as tmp:

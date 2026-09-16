@@ -3,6 +3,7 @@
 import importlib.util
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +11,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 SPEC = importlib.util.spec_from_file_location("control_plane_env", ROOT / "scripts/validate-control-plane-env.py")
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
+from environment_topology import load_topology, validate_topology
 
 
 def runtime():
@@ -49,3 +51,25 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
                 candidate[name] = value
                 with self.assertRaisesRegex(ValueError, message):
                     MODULE.validate(candidate, postgres, resolver)
+
+    def test_runtime_matches_versioned_launch_topology(self):
+        control, postgres, resolver = runtime()
+        topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
+        control["OPERATIONS_PUBLIC_URL"] = topology["operations"]["public_url"]
+        control["OPERATIONS_DOMAIN"] = "life2launch.dev"
+        MODULE.validate(control, postgres, resolver, topology)
+
+    def test_nested_domains_require_host_only_cookies(self):
+        topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
+        unsafe = deepcopy(topology)
+        unsafe["application"]["cookie_scope"] = "shared-domain"
+        with self.assertRaisesRegex(ValueError, "host-only"):
+            validate_topology(unsafe)
+
+    def test_control_plane_deployment_waits_for_approved_apex_cutover(self):
+        topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
+        with self.assertRaisesRegex(ValueError, "not approved"):
+            MODULE.require_operations_cutover(topology)
+        approved = deepcopy(topology)
+        approved["dns"]["operations_apex_cutover"] = True
+        MODULE.require_operations_cutover(approved)
