@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import create_engine, inspect
@@ -187,6 +188,49 @@ class OperatorAuthTests(unittest.TestCase):
     def test_control_plane_application_imports_with_public_health_route(self):
         main = import_api_module("main")
         self.assertIn("/healthz", {route.path for route in main.app.routes})
+
+
+class RunnerBrokerTests(unittest.TestCase):
+    def setUp(self):
+        self.main = import_api_module("main")
+        self.models = sys.modules["models"]
+        self.key = "runner-broker-key-that-is-long-enough"
+        self.main.app.state.settings = self.main.Settings(runner_broker_key=self.key)
+
+    def test_installation_token_requires_broker_key_and_preserves_expiry(self):
+        class Connector:
+            token = "short-lived-installation-token"
+            expires_at = datetime.now(timezone.utc) + timedelta(minutes=50)
+
+        class Credentials:
+            async def connector(self):
+                return Connector()
+
+        with self.assertRaisesRegex(Exception, "Runner broker authorization failed"):
+            asyncio.run(self.main.runner_installation_token(None))
+        with patch.object(self.main, "github_app", return_value=Credentials()):
+            result = asyncio.run(self.main.runner_installation_token(self.key))
+        self.assertEqual(result["token"], "short-lived-installation-token")
+        self.assertIn("+00:00", result["expires_at"])
+
+    def test_review_record_is_idempotently_upserted(self):
+        engine = create_engine("sqlite:///:memory:")
+        self.models.Base.metadata.create_all(engine)
+        self.main.app.state.engine = engine
+        with self.main.Session(engine) as session:
+            session.add(self.models.Project(id="launch-lms", manifest_revision="r" * 64, enabled=True))
+            session.commit()
+        payload = self.main.RunnerReviewRecord(
+            project_id="launch-lms", issue_key="BOT-253", attempt=1, workspace="BOT-253",
+            policy_revision="a" * 40, workflow_hash="b" * 64, base_sha="c" * 40,
+            head_sha="d" * 40, turns=4, duration_ms=1234, checks={"unit": "passed"},
+            evidence={"files": ["review.md"]},
+        )
+        first = self.main.record_runner_review(payload, self.key)
+        second = self.main.record_runner_review(payload, self.key)
+        self.assertEqual(first["run_id"], second["run_id"])
+        with self.main.Session(engine) as session:
+            self.assertEqual(session.query(self.models.AgentRun).count(), 1)
 
 
 if __name__ == "__main__":

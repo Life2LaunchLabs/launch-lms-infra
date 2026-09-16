@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import hashlib
+import hmac
 from pathlib import Path
 import sys
 
 import httpx
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine
@@ -22,7 +24,7 @@ from services.deployer.candidate import validate_candidate  # noqa: E402
 from packages.connectors.github import GitHubAppCredentials  # noqa: E402
 from auth import COOKIE, create_session, exchange_and_authorize, login_url, require_operator  # noqa: E402
 from config import Settings  # noqa: E402
-from models import DeploymentObservation, Project  # noqa: E402
+from models import AgentRun, DeploymentObservation, Project  # noqa: E402
 
 
 @asynccontextmanager
@@ -52,6 +54,22 @@ class DeploymentResult(BaseModel):
     run_id: int
     source_sha: str
     image_digest: str
+
+
+class RunnerReviewRecord(BaseModel):
+    project_id: str
+    issue_key: str
+    attempt: int
+    workspace: str
+    policy_revision: str
+    workflow_hash: str
+    base_sha: str
+    head_sha: str
+    turns: int
+    duration_ms: int
+    checks: dict
+    evidence: dict
+    disposition: str = "in_review"
 
 
 @app.get("/healthz")
@@ -116,6 +134,56 @@ def github_app(settings: Settings) -> GitHubAppCredentials:
     if not settings.github_app_id or not settings.github_installation_id or not settings.github_app_private_key:
         raise HTTPException(503, "GitHub App dispatch is not configured")
     return GitHubAppCredentials(settings.github_app_id, settings.github_installation_id, settings.github_app_private_key)
+
+
+def authorize_runner(x_runner_key: str | None) -> None:
+    expected = app.state.settings.runner_broker_key
+    if len(expected) < 32 or not x_runner_key or not hmac.compare_digest(expected, x_runner_key):
+        raise HTTPException(401, "Runner broker authorization failed")
+
+
+@app.post("/internal/v1/github/installation-token")
+async def runner_installation_token(x_runner_key: str | None = Header(default=None)) -> dict:
+    authorize_runner(x_runner_key)
+    connector = await github_app(app.state.settings).connector()
+    return {"token": connector.token, "expires_at": connector.expires_at.isoformat()}
+
+
+@app.post("/internal/v1/runs/review", status_code=202)
+def record_runner_review(payload: RunnerReviewRecord, x_runner_key: str | None = Header(default=None)) -> dict:
+    authorize_runner(x_runner_key)
+    if app.state.engine is None:
+        raise HTTPException(503, "Run storage is unavailable")
+    if payload.workspace != payload.issue_key or payload.attempt < 0:
+        raise HTTPException(422, "Invalid workspace or attempt")
+    if any(len(value) != size for value, size in (
+        (payload.policy_revision, 40), (payload.workflow_hash, 64),
+        (payload.base_sha, 40), (payload.head_sha, 40),
+    )):
+        raise HTTPException(422, "Run revisions must be full hashes")
+    manifest = load_project(payload.project_id)
+    if not payload.issue_key.startswith(manifest.data["tracker"]["delivery_project"] + "-"):
+        raise HTTPException(422, "Issue does not belong to the registered project")
+    finished_at = datetime.now(timezone.utc)
+    with Session(app.state.engine) as session:
+        record = session.query(AgentRun).filter_by(
+            project_id=payload.project_id, issue_key=payload.issue_key, attempt=payload.attempt,
+        ).one_or_none()
+        values = payload.model_dump(exclude={"project_id", "issue_key", "attempt"})
+        if record is None:
+            record = AgentRun(
+                project_id=payload.project_id, issue_key=payload.issue_key, attempt=payload.attempt,
+                started_at=finished_at - timedelta(milliseconds=payload.duration_ms), **values,
+            )
+            session.add(record)
+        else:
+            for field, value in values.items():
+                setattr(record, field, value)
+        record.finished_at = finished_at
+        session.commit()
+        session.refresh(record)
+        run_id = record.id
+    return {"status": "recorded", "run_id": run_id}
 
 
 @app.post("/api/v1/projects/{project_id}/deployments/{environment}/dispatch", status_code=202)

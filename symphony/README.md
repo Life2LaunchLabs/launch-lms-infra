@@ -7,8 +7,10 @@ only. Persistent workspaces, API authentication and logs live in symphony-home.
 
 ## Install
 
-On the unstable x86_64 host, provision /etc/launch-symphony (0700) containing:
-- runner.env (0600): JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN and GH_TOKEN.
+On the dedicated operations host, provision /etc/launch-symphony (0700) containing:
+- runner.env (0600): JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN,
+  OPERATIONS_RUNNER_BROKER_KEY and OPERATIONS_PROJECT_ID. GitHub access is minted
+  at startup by the control plane; do not store a long-lived GH_TOKEN.
 - openai-api-key (0600, uid 1000): plain API key for the funded OpenAI API project.
 - ENABLED: explicit opt-in marker. Never enable this on production.
 
@@ -59,9 +61,12 @@ current agent; Git/workpad state remains for continuation. To disable all future
 starts, remove the host ENABLED marker AND run Compose stop. App deployments leave
 this separate project alone. Do not delete its volume during routine updates.
 
-On the 4 GiB dev droplet the worker is limited to 2300 MiB, 1.5 CPU and 512 PIDs;
+The worker is limited to 2300 MiB, 1.5 CPU and 512 PIDs;
 large image/browser checks run in GitHub Actions. Inspect OOM state when a worker
 disappears. Expand server capacity before increasing concurrency.
+Use `python3 scripts/symphony-state.py inspect` for the redacted OOM/resource record.
+Host transfer, verified snapshot/restore, continuation, and rollback are defined in
+`deploy/control-plane/SYMPHONY_MIGRATION.md`.
 
 Upstream contract: https://github.com/openai/symphony/blob/v0.0.2/SPEC.md
 Adapter + label filter verified in v0.0.2 source. Further harness policy lives in the

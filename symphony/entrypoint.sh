@@ -12,10 +12,12 @@ codex -c 'forced_login_method="api"' login --with-api-key < "$api_key_file" >/de
   echo 'Worker API-key login failed; dispatch remains stopped' >&2
   exit 1
 }
-: "${GH_TOKEN:?GitHub token required}"
+: "${OPERATIONS_BROKER_URL:?Operations credential broker URL required}"
+: "${OPERATIONS_RUNNER_BROKER_KEY:?Operations runner broker key required}"
 : "${JIRA_BASE_URL:?Jira URL required}"
 : "${JIRA_EMAIL:?Jira email required}"
 : "${JIRA_API_TOKEN:?Jira token required}"
+python3 /opt/symphony/refresh_github_auth.py --once
 git config --global user.name "Launch LMS Symphony"
 git config --global user.email "symphony@life2launch.dev"
 gh auth setup-git
