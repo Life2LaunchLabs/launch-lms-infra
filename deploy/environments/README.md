@@ -30,6 +30,15 @@ direct links, logout, and default-org redirects. `session_handoff_verified` and
 nested unstable deployment refuse to proceed until those gates are reviewed and
 enabled, even though OpenTofu can prepare the DNS records beforehand.
 
+While the existing unstable installation still uses the operations-domain apex,
+its generated Caddy configuration serves only
+`/.well-known/launch-lms-domain-preflight` on the nested unstable apex and
+wildcard. The endpoint returns 204 and all other paths return 404. This allows
+the repository deployment workflow to provision and renew the DNS-challenge
+certificate and prove public DNS/TLS without exposing the application under a
+domain it has not adopted. The preflight-only site disappears automatically
+when the runtime domain is migrated.
+
 The `.dev` apex remains on the old unstable host while
 `dns.operations_apex_cutover` is false. The control-plane deployment script also
 refuses to start in that state. After nested unstable passes routing, TLS, login,

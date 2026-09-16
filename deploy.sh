@@ -44,6 +44,7 @@ docker compose up -d --remove-orphans launch-lms caddy
 # Ensure mounted config changes are picked up by an already-running Caddy.
 docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
 bash scripts/verify-deploy.sh
+python3 scripts/verify-domain-preflight.py
 # Backfill only after the embedding model and application are ready. Releases
 # created before resource search existed do not contain this script; domain-only
 # migration of those pinned images must remain possible without changing images.

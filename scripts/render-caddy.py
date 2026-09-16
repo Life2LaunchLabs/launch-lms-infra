@@ -1,7 +1,9 @@
 from pathlib import Path
 from env_file import read_env
+from environment_topology import load_topology
 import hashlib
 import re
+from urllib.parse import urlparse
 
 env = read_env(Path('.env'))
 domain = env.get('LAUNCHLMS_DOMAIN', '')
@@ -9,8 +11,9 @@ domain_pattern = r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}'
 if not re.fullmatch(domain_pattern, domain):
     raise ValueError('Use a DNS hostname without scheme, wildcard, or port')
 config = Path('Caddyfile').read_text().replace('your.domain.com', domain)
+deployment_environment = Path('.deployment-environment').read_text().strip()
 routes = 'import launch_lms_proxy'
-if Path('.deployment-environment').read_text().strip() == 'unstable':
+if deployment_environment == 'unstable':
     # Complete Basic authentication once, then use a secure domain cookie so
     # application Bearer tokens can occupy the Authorization header unchanged.
     user = env.get('UNSTABLE_HTTP_USER', '')
@@ -34,6 +37,32 @@ if Path('.deployment-environment').read_text().strip() == 'unstable':
         }}
     }}'''
 config = config.replace('__LAUNCHLMS_ROUTES__', routes)
+
+# Before the nested unstable cutover, obtain and continuously renew its apex
+# and wildcard certificate without sending application traffic to a runtime
+# that is still configured for the legacy .dev hostname. This makes public
+# DNS/TLS observable before any session or canonical-domain behavior changes.
+topology_path = Path(__file__).resolve().parents[1] / 'deploy/environments/launch-lms.yaml'
+topology = load_topology(topology_path)
+operations_domain = urlparse(topology['operations']['public_url']).hostname or ''
+nested_unstable_domain = topology['application']['unstable']['base_domain']
+if (deployment_environment == 'unstable' and domain == operations_domain and
+        domain != nested_unstable_domain and
+        not topology['application']['unstable']['cutover_approved']):
+    config += f'''
+
+{nested_unstable_domain}, *.{nested_unstable_domain} {{
+    tls {{
+        dns digitalocean {{env.DO_AUTH_TOKEN}}
+        resolvers 1.1.1.1 1.0.0.1
+        propagation_delay 120s
+        propagation_timeout 10m
+    }}
+    @domain_preflight path /.well-known/launch-lms-domain-preflight
+    respond @domain_preflight 204
+    respond 404
+}}
+'''
 legacy = env.get('LAUNCHLMS_LEGACY_DOMAIN', '')
 if legacy:
     if not re.fullmatch(domain_pattern, legacy):
