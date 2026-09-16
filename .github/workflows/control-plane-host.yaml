@@ -98,8 +98,6 @@ jobs:
       DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
-      SPACES_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
-      SPACES_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: https://sfo3.digitaloceanspaces.com
       AWS_DEFAULT_REGION: us-east-1
       AWS_REQUEST_CHECKSUM_CALCULATION: when_required
@@ -114,16 +112,17 @@ jobs:
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.10.6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install scoped state verifier
+        working-directory: deploy/control-plane/state-bootstrap
+        run: python -m pip install -r requirements.txt
       - name: Refuse unversioned state bucket
         working-directory: deploy/control-plane/state-bootstrap
         env:
           STATE_BUCKET: ${{ vars.OPERATIONS_STATE_BUCKET }}
-        run: |
-          test -n "$STATE_BUCKET"
-          tofu init
-          tofu import -var="bucket_name=$STATE_BUCKET" \
-            digitalocean_spaces_bucket.state "sfo3,$STATE_BUCKET"
-          tofu plan -detailed-exitcode -var="bucket_name=$STATE_BUCKET"
+        run: python verify_versioning.py
       - name: Initialize locked remote state
         run: tofu init -backend-config="bucket=${{ vars.OPERATIONS_STATE_BUCKET }}"
       - name: Adopt the existing droplet
