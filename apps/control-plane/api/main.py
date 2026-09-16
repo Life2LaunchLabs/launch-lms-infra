@@ -72,6 +72,16 @@ class FeedbackSubmission(BaseModel):
     context: dict = Field(default_factory=dict)
 
 
+class CandidateDispatch(BaseModel):
+    candidate: dict
+
+
+class DeploymentResult(BaseModel):
+    run_id: int
+    source_sha: str
+    image_digest: str
+
+
 @app.get("/healthz")
 def health() -> dict:
     return {"status": "ok"}
