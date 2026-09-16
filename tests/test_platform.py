@@ -10,8 +10,10 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.orm import Session
 import httpx
 
 
@@ -149,6 +151,110 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(len(seen), 3)
 
 
+class FeedbackSyncTests(unittest.TestCase):
+    def test_pending_feedback_syncs_once_and_discards_message_from_cache(self):
+        models = import_api_module("models")
+        from packages.connectors.tracker import TrackerIssue
+        from services.feedback.sync import sanitize_context, synchronize_pending
+
+        engine = create_engine("sqlite:///:memory:")
+        models.Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add(models.Project(id="launch-lms", manifest_revision="test", enabled=True))
+            session.add(models.IdempotencyRecord(
+                project_id="launch-lms", operation="feedback.create", key_hash="a" * 64, status="pending",
+                result={"message": "The button is confusing", "context": {"route": "/orgs/acme/private/42"},
+                        "environment": "unstable", "opaque_user_id": "user", "opaque_org_id": "org", "role": "learner"},
+            )); session.commit()
+
+        class Adapter:
+            async def create_issue(self, project, summary, description, properties, idempotency_key):
+                self.values = project, summary, description, properties, idempotency_key
+                return TrackerIssue("FEED-1", summary, "Open", "r1", properties, {})
+            async def set_properties(self, key, properties):
+                self.properties = key, properties
+            async def get_issue(self, key):
+                return TrackerIssue(key, "Feedback", "Open", "r2", {}, {})
+
+        adapter = Adapter()
+        result = asyncio.run(synchronize_pending(engine, adapter, load_project("launch-lms").data))
+        self.assertEqual(result["synced"], 1)
+        self.assertEqual(adapter.values[0], "FEED")
+        self.assertEqual(sanitize_context({"route": "/orgs/acme/private/42"})["route"], "/orgs/:id/:id/:id")
+        with Session(engine) as session:
+            record = session.query(models.IdempotencyRecord).one()
+            self.assertEqual(record.status, "synced")
+            self.assertEqual(record.result, {"issue_key": "FEED-1", "revision": "r2"})
+
+    def test_tracker_outage_keeps_submission_pending(self):
+        models = import_api_module("models")
+        from services.feedback.sync import synchronize_pending
+        engine = create_engine("sqlite:///:memory:")
+        models.Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add(models.Project(id="launch-lms", manifest_revision="test", enabled=True))
+            session.add(models.IdempotencyRecord(
+                project_id="launch-lms", operation="feedback.create", key_hash="b" * 64, status="pending",
+                result={"message": "Keep me", "context": {}, "environment": "unstable",
+                        "opaque_user_id": "user", "opaque_org_id": "org", "role": "learner"},
+            )); session.commit()
+
+        class Offline:
+            async def create_issue(self, *_args):
+                raise httpx.ConnectError("offline")
+
+        result = asyncio.run(synchronize_pending(engine, Offline(), load_project("launch-lms").data))
+        self.assertEqual(result["pending"], 1)
+        with Session(engine) as session:
+            record = session.query(models.IdempotencyRecord).one()
+            self.assertEqual(record.status, "pending")
+            self.assertEqual(record.result["message"], "Keep me")
+
+    def test_declared_attachment_is_atomic_and_purged_after_tracker_upload(self):
+        models = import_api_module("models")
+        from packages.connectors.tracker import TrackerIssue
+        from services.feedback.sync import PROPERTY, synchronize_pending
+        engine = create_engine("sqlite:///:memory:")
+        models.Base.metadata.create_all(engine)
+        with Session(engine) as session:
+            session.add(models.Project(id="launch-lms", manifest_revision="test", enabled=True)); session.flush()
+            record = models.IdempotencyRecord(
+                project_id="launch-lms", operation="feedback.create", key_hash="c" * 64, status="pending",
+                result={"message": "Screenshot attached", "context": {}, "environment": "unstable",
+                        "opaque_user_id": "user", "opaque_org_id": "org", "role": "learner", "attachment_count": 1},
+            )
+            session.add(record); session.commit(); operation_id = record.id
+
+        class Adapter:
+            async def create_issue(self, project, summary, description, properties, idempotency_key):
+                self.created_property = dict(properties[PROPERTY])
+                return TrackerIssue("FEED-2", summary, "Open", "r1", properties, {})
+            async def attach(self, key, filename, content_type, stream):
+                self.upload = key, filename, content_type, stream.read()
+                return {"id": "attachment-1"}
+            async def set_properties(self, key, properties):
+                self.completed_property = properties[PROPERTY]
+            async def get_issue(self, key):
+                return TrackerIssue(key, "Screenshot attached", "Open", "r2", {}, {})
+
+        adapter = Adapter()
+        waiting = asyncio.run(synchronize_pending(engine, adapter, load_project("launch-lms").data))
+        self.assertEqual(waiting["awaiting_attachments"], 1)
+        self.assertFalse(hasattr(adapter, "created_property"))
+        with Session(engine) as session:
+            session.add(models.PendingAttachment(
+                operation_id=operation_id, slot=0, opaque_user_id="user", filename="shot.png",
+                content_type="image/png", content=b"\x89PNG\r\n\x1a\ncontent", status="pending",
+            )); session.commit()
+        completed = asyncio.run(synchronize_pending(engine, adapter, load_project("launch-lms").data))
+        self.assertEqual(completed["synced"], 1)
+        self.assertEqual(adapter.created_property["synchronization_status"], "pending")
+        self.assertEqual(adapter.completed_property["synchronization_status"], "complete")
+        self.assertEqual(adapter.upload[3], b"\x89PNG\r\n\x1a\ncontent")
+        with Session(engine) as session:
+            self.assertEqual(session.query(models.PendingAttachment).count(), 0)
+
+
 class OperationalSchemaTests(unittest.TestCase):
     def test_all_operational_tables_create_without_tracker_content_table(self):
         models = import_api_module("models")
@@ -156,7 +262,7 @@ class OperationalSchemaTests(unittest.TestCase):
         models.Base.metadata.create_all(engine)
         self.assertEqual(
             set(inspect(engine).get_table_names()),
-            {"projects", "embed_sessions", "unread_markers", "sync_cursors", "idempotency_records", "agent_runs", "deployment_observations", "announcements"},
+            {"projects", "embed_sessions", "unread_markers", "sync_cursors", "idempotency_records", "pending_attachments", "agent_runs", "deployment_observations", "announcements"},
         )
 
 
@@ -187,6 +293,109 @@ class OperatorAuthTests(unittest.TestCase):
     def test_control_plane_application_imports_with_public_health_route(self):
         main = import_api_module("main")
         self.assertIn("/healthz", {route.path for route in main.app.routes})
+
+
+class EmbedSecurityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import jwt
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        cls.jwt = jwt
+        cls.private = Ed25519PrivateKey.generate()
+        cls.next_private = Ed25519PrivateKey.generate()
+        cls.public = cls.private.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        cls.next_public = cls.next_private.public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+        import_api_module("config")
+        import_api_module("auth")
+        import_api_module("models")
+        cls.embed = import_api_module("embed_auth")
+
+    def settings(self):
+        config = sys.modules["config"]
+        return config.Settings(
+            github_client_id="client", github_client_secret="secret", session_secret="x" * 32,
+            embed_public_keys_json=json.dumps({"launch-ops-2026-01": self.public, "launch-ops-2026-02": self.next_public}),
+        )
+
+    def claims(self, **changes):
+        now = int(datetime.now(timezone.utc).timestamp())
+        value = {"project": "launch-lms", "environment": "unstable", "sub": "opaque-user", "org": "opaque-org",
+                 "role": "learner", "nonce": str(uuid4()), "iat": now, "exp": now + 240,
+                 "aud": "launch-operations", "iss": "launch-lms"}
+        value.update(changes)
+        return value
+
+    def token(self, claims, next_key=False):
+        return self.jwt.encode(claims, self.next_private if next_key else self.private, algorithm="EdDSA",
+                               headers={"kid": "launch-ops-2026-02" if next_key else "launch-ops-2026-01"})
+
+    def verify(self, claims, origin="https://tenant.unstable.life2launch.app", store=None, next_key=False):
+        return self.embed.verify_host_token(
+            self.token(claims, next_key), claims["nonce"], origin, load_project("launch-lms"),
+            self.settings(), store or self.embed.MemoryReplayStore(),
+        )
+
+    def test_valid_and_next_rotation_keys(self):
+        self.assertEqual(self.verify(self.claims())["sub"], "opaque-user")
+        self.assertEqual(self.verify(self.claims(), next_key=True)["sub"], "opaque-user")
+
+    def test_expired_future_audience_origin_and_replay_are_rejected(self):
+        from fastapi import HTTPException
+        now = int(datetime.now(timezone.utc).timestamp())
+        invalid = [
+            self.claims(iat=now - 400, exp=now - 100),
+            self.claims(iat=now + 60, exp=now + 120),
+            self.claims(aud="wrong-audience"),
+        ]
+        for claims in invalid:
+            with self.assertRaises(HTTPException):
+                self.verify(claims)
+        with self.assertRaisesRegex(HTTPException, "Host origin"):
+            self.verify(self.claims(), origin="https://attacker.example")
+        with self.assertRaisesRegex(HTTPException, "Host origin"):
+            self.verify(self.claims(), origin="https://tenant.staging.unstable.life2launch.app")
+        claims = self.claims(); store = self.embed.MemoryReplayStore()
+        self.verify(claims, store=store)
+        with self.assertRaisesRegex(HTTPException, "already used"):
+            self.verify(claims, store=store)
+
+    def test_loader_never_places_session_token_in_url_or_storage(self):
+        loader = (ROOT / "packages/embed-sdk/loader.js").read_text()
+        self.assertIn("new MessageChannel()", loader)
+        self.assertNotIn("localStorage", loader)
+        self.assertNotIn("sessionStorage", loader)
+        self.assertNotIn("token=", loader)
+
+    def test_embed_document_is_origin_scoped_and_production_disabled(self):
+        from fastapi import HTTPException
+        main = import_api_module("main")
+        response = main.embed_document("launch-lms", "unstable")
+        policy = response.headers["content-security-policy"]
+        self.assertIn("frame-ancestors https://unstable.life2launch.app https://*.unstable.life2launch.app", policy)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        with self.assertRaises(HTTPException) as error:
+            main.embed_document("launch-lms", "production")
+        self.assertEqual(error.exception.status_code, 404)
+
+    def test_feedback_acceptance_is_durable_and_idempotent(self):
+        main = import_api_module("main")
+        models = sys.modules["models"]
+        engine = create_engine("sqlite:///:memory:")
+        models.Base.metadata.create_all(engine)
+        from sqlalchemy.orm import Session
+        with Session(engine) as session:
+            session.add(models.Project(id="launch-lms", manifest_revision="test", enabled=True)); session.commit()
+        main.app.state.engine = engine
+        identity = {"project": "launch-lms", "environment": "unstable", "sub": "user", "org": "org", "role": "learner"}
+        payload = main.FeedbackSubmission(message="The button is confusing", context={"route": "/test", "private": "drop"})
+        first = main.submit_embed_feedback(payload, identity, "same-key")
+        second = main.submit_embed_feedback(payload, identity, "same-key")
+        self.assertEqual(first, second)
+        with Session(engine) as session:
+            record = session.query(models.IdempotencyRecord).one()
+            self.assertEqual(record.status, "pending")
+            self.assertNotIn("private", record.result["context"])
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ class TrackerIssue:
     status: str
     revision: str
     properties: dict
+    details: dict
 
 
 class TrackerAdapter(ABC):
@@ -25,6 +26,12 @@ class TrackerAdapter(ABC):
     async def get_issue(self, key: str) -> TrackerIssue: ...
 
     @abstractmethod
+    async def search(self, project: str, jql: str) -> list[TrackerIssue]: ...
+
+    @abstractmethod
+    async def property(self, key: str, name: str) -> dict | None: ...
+
+    @abstractmethod
     async def comments(self, key: str) -> list[dict]: ...
 
     @abstractmethod
@@ -32,6 +39,12 @@ class TrackerAdapter(ABC):
 
     @abstractmethod
     async def attach(self, key: str, filename: str, content_type: str, stream: BinaryIO) -> dict: ...
+
+    @abstractmethod
+    async def attachment(self, attachment_id: str) -> tuple[bytes, str]: ...
+
+    @abstractmethod
+    async def update_fields(self, key: str, fields: dict) -> None: ...
 
     @abstractmethod
     async def transition(self, key: str, status: str) -> None: ...

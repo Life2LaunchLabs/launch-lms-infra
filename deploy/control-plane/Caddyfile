@@ -5,6 +5,6 @@
     Strict-Transport-Security "max-age=31536000; includeSubDomains"
     X-Content-Type-Options nosniff
     Referrer-Policy no-referrer
-    Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+    Content-Security-Policy "default-src 'self'; object-src 'none'; base-uri 'none'"
   }
 }

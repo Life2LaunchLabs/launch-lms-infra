@@ -35,7 +35,7 @@ class JiraAdapter(TrackerAdapter):
         return TrackerIssue(
             key=value["key"], summary=fields.get("summary", ""),
             status=fields.get("status", {}).get("name", ""),
-            revision=fields.get("updated", ""), properties=value.get("properties", {}),
+            revision=fields.get("updated", ""), properties=value.get("properties", {}), details=fields,
         )
 
     async def create_issue(self, project: str, summary: str, description: dict, properties: dict, idempotency_key: str) -> TrackerIssue:
@@ -52,10 +52,28 @@ class JiraAdapter(TrackerAdapter):
     async def get_issue(self, key: str) -> TrackerIssue:
         async with self._client() as client:
             response = await client.get(f"/rest/api/3/issue/{key}", params={
-                "fields": "summary,status,updated", "properties": "*all",
+                "fields": "summary,status,updated,created,description,comment,attachment,labels,priority", "properties": "*all",
             })
             response.raise_for_status()
             return self._issue(response.json())
+
+    async def search(self, project: str, jql: str) -> list[TrackerIssue]:
+        async with self._client() as client:
+            response = await client.post("/rest/api/3/search/jql", json={
+                "jql": f'project = "{project}" AND ({jql}) ORDER BY updated DESC',
+                "fields": ["summary", "status", "updated", "created", "description", "comment", "attachment", "labels", "priority"],
+                "maxResults": 100,
+            })
+            response.raise_for_status()
+            return [self._issue(value) for value in response.json().get("issues", [])]
+
+    async def property(self, key: str, name: str) -> dict | None:
+        async with self._client() as client:
+            response = await client.get(f"/rest/api/3/issue/{key}/properties/{name}")
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return response.json().get("value")
 
     async def comments(self, key: str) -> list[dict]:
         async with self._client() as client:
@@ -65,10 +83,7 @@ class JiraAdapter(TrackerAdapter):
 
     async def add_comment(self, key: str, body: dict, public: bool) -> dict:
         async with self._client() as client:
-            if public:
-                response = await client.post(f"/rest/servicedeskapi/request/{key}/comment", json={"body": body, "public": True})
-            else:
-                response = await client.post(f"/rest/api/3/issue/{key}/comment", json={"body": body})
+            response = await client.post(f"/rest/api/3/issue/{key}/comment", json={"body": body})
             response.raise_for_status()
             return response.json()
 
@@ -82,6 +97,17 @@ class JiraAdapter(TrackerAdapter):
             response.raise_for_status()
             values = response.json()
             return values[0] if values else {}
+
+    async def attachment(self, attachment_id: str) -> tuple[bytes, str]:
+        async with self._client() as client:
+            response = await client.get(f"/rest/api/3/attachment/content/{attachment_id}")
+            response.raise_for_status()
+            return response.content, response.headers.get("content-type", "application/octet-stream")
+
+    async def update_fields(self, key: str, fields: dict) -> None:
+        async with self._client() as client:
+            response = await client.put(f"/rest/api/3/issue/{key}", json={"fields": fields})
+            response.raise_for_status()
 
     async def transition(self, key: str, status: str) -> None:
         async with self._client() as client:
