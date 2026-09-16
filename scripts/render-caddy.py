@@ -47,8 +47,7 @@ topology = load_topology(topology_path)
 operations_domain = urlparse(topology['operations']['public_url']).hostname or ''
 nested_unstable_domain = topology['application']['unstable']['base_domain']
 if (deployment_environment == 'unstable' and domain == operations_domain and
-        domain != nested_unstable_domain and
-        not topology['application']['unstable']['cutover_approved']):
+        domain != nested_unstable_domain):
     config += f'''
 
 {nested_unstable_domain}, *.{nested_unstable_domain} {{

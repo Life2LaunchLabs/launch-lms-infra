@@ -41,12 +41,26 @@ def validate_topology(value: object) -> None:
         raise ValueError("nested hosted environments require host-only cookies")
     if not isinstance(application.get("session_handoff_verified"), bool):
         raise ValueError("tenant session handoff verification must be an explicit boolean")
+    if application["session_handoff_verified"]:
+        evidence = application.get("session_handoff_evidence", {})
+        if not re.fullmatch(r"[0-9a-f]{40}", str(evidence.get("app_commit", ""))):
+            raise ValueError("verified session handoff requires an exact application commit")
+        if not str(evidence.get("build_run_id", "")).isdigit():
+            raise ValueError("verified session handoff requires a build run ID")
+        if not isinstance(evidence.get("pull_request"), int):
+            raise ValueError("verified session handoff requires an application pull request")
     production = application.get("production", {})
     unstable = application.get("unstable", {})
     if not isinstance(unstable.get("cutover_approved"), bool):
         raise ValueError("nested unstable cutover must be explicitly approved")
     if unstable["cutover_approved"] and not application["session_handoff_verified"]:
         raise ValueError("nested unstable cutover requires verified tenant session handoff")
+    if unstable["cutover_approved"]:
+        evidence = unstable.get("cutover_evidence", {})
+        if not str(evidence.get("tls_preflight_run_id", "")).isdigit():
+            raise ValueError("nested unstable cutover requires a TLS preflight run ID")
+        if evidence.get("verified_path") != "/.well-known/launch-lms-domain-preflight":
+            raise ValueError("nested unstable cutover requires the canonical preflight path")
     production_domain = production.get("base_domain", "")
     unstable_domain = unstable.get("base_domain", "")
     if not HOST.fullmatch(production_domain) or not HOST.fullmatch(unstable_domain):

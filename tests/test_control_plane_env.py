@@ -80,6 +80,7 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
     def test_nested_cutover_rejects_unverified_cross_org_handoff(self):
         topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
         unsafe = deepcopy(topology)
+        unsafe["application"]["session_handoff_verified"] = False
         unsafe["application"]["unstable"]["cutover_approved"] = True
         with self.assertRaisesRegex(ValueError, "session handoff"):
             validate_topology(unsafe)
