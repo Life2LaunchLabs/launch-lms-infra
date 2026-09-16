@@ -1,5 +1,8 @@
 # Dedicated control-plane host
 
+Owner account setup: [OWNER_SETUP.md](OWNER_SETUP.md). This is preparation, not
+authorization to move the operations apex or deploy the control plane.
+
 Do not install this stack on an application host. Provision an Ubuntu 24.04 host
 with an operations-only domain, encrypted provider backups, and a firewall allowing
 80/443 publicly and SSH only from operator/Actions addresses. PostgreSQL, the API,
@@ -10,8 +13,8 @@ and the Symphony status network are never publicly published.
 Cloud resources live under `deploy/control-plane/iac`; host configuration lives
 under `deploy/control-plane/ansible`. Do not bootstrap the server with an ad-hoc
 shell session. The protected `Control-plane host` workflow validates both on pull
-requests and exposes four explicit operations: `plan`, `apply`, `configure`, and
-`verify`. Cloud and host mutations require approval through the `operations`
+requests and exposes five explicit operations: `prepare-state`, `plan`, `apply`,
+`configure`, and `verify`. Cloud and host mutations require approval through the `operations`
 GitHub Environment.
 
 The accepted initial host is `launch-operations-1` in SFO3: Ubuntu 24.04 x86_64,

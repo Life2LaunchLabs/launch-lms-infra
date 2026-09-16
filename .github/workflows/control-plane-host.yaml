@@ -13,7 +13,7 @@ on:
       action:
         description: Review or apply cloud/host state
         type: choice
-        options: [plan, apply, configure, verify]
+        options: [prepare-state, plan, apply, configure, verify]
         default: plan
         required: true
       adopt_droplet_id:
@@ -59,6 +59,33 @@ jobs:
           ansible-playbook --syntax-check verify.yml
           ansible-lint bootstrap.yml verify.yml
 
+  prepare-state:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'prepare-state'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: operations
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_VERSIONING_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_VERSIONING_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: us-east-1
+      STATE_BUCKET: ${{ vars.OPERATIONS_STATE_BUCKET }}
+    steps:
+      - name: Enable and verify private state-bucket versioning
+        run: |
+          test -n "$STATE_BUCKET"
+          test -n "$AWS_ACCESS_KEY_ID"
+          test -n "$AWS_SECRET_ACCESS_KEY"
+          aws s3api put-bucket-versioning \
+            --bucket "$STATE_BUCKET" \
+            --versioning-configuration Status=Enabled \
+            --endpoint-url https://sfo3.digitaloceanspaces.com
+          status=$(aws s3api get-bucket-versioning \
+            --bucket "$STATE_BUCKET" \
+            --query Status --output text \
+            --endpoint-url https://sfo3.digitaloceanspaces.com)
+          test "$status" = Enabled
+          echo 'Private state-bucket versioning is enabled.'
+
   cloud:
     if: github.event_name == 'workflow_dispatch' && (inputs.action == 'plan' || inputs.action == 'apply')
     needs: validate
@@ -69,6 +96,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: https://sfo3.digitaloceanspaces.com
+      AWS_DEFAULT_REGION: us-east-1
       TF_VAR_ssh_key_names: ${{ vars.OPERATIONS_SSH_KEY_NAMES_JSON }}
       TF_VAR_ssh_source_cidrs: ${{ vars.OPERATIONS_SSH_SOURCE_CIDRS_JSON }}
     defaults:
@@ -79,6 +107,19 @@ jobs:
       - uses: opentofu/setup-opentofu@v1
         with:
           tofu_version: 1.10.6
+      - name: Refuse unversioned state bucket
+        env:
+          STATE_BUCKET: ${{ vars.OPERATIONS_STATE_BUCKET }}
+        run: |
+          test -n "$STATE_BUCKET"
+          status=$(aws s3api get-bucket-versioning \
+            --bucket "$STATE_BUCKET" \
+            --query Status --output text \
+            --endpoint-url https://sfo3.digitaloceanspaces.com)
+          test "$status" = Enabled || {
+            echo 'State bucket versioning must be Enabled before plan/apply' >&2
+            exit 1
+          }
       - name: Initialize locked remote state
         run: tofu init -backend-config="bucket=${{ vars.OPERATIONS_STATE_BUCKET }}"
       - name: Adopt the existing droplet

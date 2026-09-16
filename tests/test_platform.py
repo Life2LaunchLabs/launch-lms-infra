@@ -111,6 +111,28 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual([request.method for request in requests], ["POST", "PUT", "GET"])
         self.assertTrue(all("secret-token" not in str(request.content) for request in requests))
 
+    def test_jira_scoped_token_preserves_cloud_gateway_prefix(self):
+        from packages.connectors.jira import JiraAdapter, JiraCredentials
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            return httpx.Response(200, json={"comments": []})
+
+        adapter = JiraAdapter(
+            JiraCredentials("https://api.atlassian.com/ex/jira/cloud-123/", "feed@example.test", "token"),
+            httpx.MockTransport(handler),
+        )
+        self.assertEqual(asyncio.run(adapter.comments("FEED-1")), [])
+        self.assertEqual(seen[0].url.host, "api.atlassian.com")
+        self.assertEqual(seen[0].url.path, "/ex/jira/cloud-123/rest/api/3/issue/FEED-1/comment")
+
+    def test_jira_rejects_gateway_without_cloud_id(self):
+        from packages.connectors.jira import JiraAdapter, JiraCredentials
+
+        with self.assertRaisesRegex(ValueError, "gateway URL"):
+            JiraAdapter(JiraCredentials("https://api.atlassian.com/ex/jira", "feed@example.test", "token"))
+
     def test_github_app_mints_short_lived_installation_capability(self):
         import jwt
         from cryptography.hazmat.primitives import serialization
