@@ -70,13 +70,14 @@ def auth_domains(jar: CookieJar) -> set[str]:
     return {item.domain.lstrip('.') for item in jar if item.name in AUTH_COOKIE_NAMES}
 
 
-def validated_issue_redirect(current_url: str, location: str, source: str) -> str:
+def validated_route_redirect(current_url: str, location: str, expected_host: str,
+                             expected_path: str) -> str:
     destination = urljoin(current_url, location)
     parsed = urlparse(destination)
-    if (parsed.scheme != 'https' or parsed.hostname != source or
-            parsed.path.rstrip('/') != '/api/auth/handoff/issue' or
+    if (parsed.scheme != 'https' or parsed.hostname != expected_host or
+            parsed.path.rstrip('/') != expected_path.rstrip('/') or
             any(name in parsed.query for name in ('ticket=', 'access_token=', 'refresh_token='))):
-        raise ValueError('Handoff issue returned an unsafe canonical redirect')
+        raise ValueError('Handoff route returned an unsafe canonical redirect')
     return destination
 
 
@@ -131,7 +132,9 @@ def verify() -> None:
 
     issue_status, issue_headers, issue_body = request(opener, issue_url)
     if issue_status in (301, 302, 307, 308):
-        issue_url = validated_issue_redirect(issue_url, issue_headers.get('Location', ''), source)
+        issue_url = validated_route_redirect(
+            issue_url, issue_headers.get('Location', ''), source, '/api/auth/handoff/issue'
+        )
         issue_status, issue_headers, issue_body = request(opener, issue_url)
     if issue_status != 200 or 'text/html' not in issue_headers.get('Content-Type', ''):
         raise ValueError(f'Handoff ticket issue returned HTTP {issue_status}')
@@ -144,6 +147,12 @@ def verify() -> None:
         raise ValueError('Handoff secret appeared in a URL')
 
     complete_status, complete_headers, _ = request(opener, form.action, data=form.fields)
+    if complete_status in (301, 302, 307, 308):
+        form.action = validated_route_redirect(
+            form.action, complete_headers.get('Location', ''), target,
+            '/api/auth/handoff/complete',
+        )
+        complete_status, complete_headers, _ = request(opener, form.action, data=form.fields)
     account_url = urljoin(form.action, complete_headers.get('Location', ''))
     if complete_status != 303 or account_url != f'https://{target}/account':
         raise ValueError('Handoff completion did not redirect to the reviewed target path')
