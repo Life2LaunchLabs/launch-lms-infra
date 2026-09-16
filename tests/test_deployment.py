@@ -289,14 +289,26 @@ class DeploymentTests(unittest.TestCase):
         current='https://org.unstable.example/api/auth/handoff/issue?state=abc'
         self.assertEqual(
             'https://org.unstable.example/api/auth/handoff/issue/?state=abc',
-            verifier.validated_issue_redirect(
+            verifier.validated_route_redirect(
                 current,
                 'https://org.unstable.example/api/auth/handoff/issue/?state=abc',
                 'org.unstable.example',
+                '/api/auth/handoff/issue',
             ),
         )
         with self.assertRaisesRegex(ValueError, 'unsafe'):
-            verifier.validated_issue_redirect(current, 'https://attacker.example/collect', 'org.unstable.example')
+            verifier.validated_route_redirect(
+                current, 'https://attacker.example/collect', 'org.unstable.example',
+                '/api/auth/handoff/issue',
+            )
+        self.assertEqual(
+            'https://unstable.example/api/auth/handoff/complete/',
+            verifier.validated_route_redirect(
+                'https://unstable.example/api/auth/handoff/complete',
+                '/api/auth/handoff/complete/', 'unstable.example',
+                '/api/auth/handoff/complete',
+            ),
+        )
 
     def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:
