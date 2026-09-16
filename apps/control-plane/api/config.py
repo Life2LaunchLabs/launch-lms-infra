@@ -23,6 +23,7 @@ class Settings:
     session_secret: str = os.getenv("OPERATIONS_SESSION_SECRET", "")
     symphony_status_url: str = os.getenv("SYMPHONY_STATUS_URL", "http://symphony:8788/api/v1/state")
     environment: str = os.getenv("OPERATIONS_ENVIRONMENT", "development")
+    embed_public_keys_json: str = os.getenv("EMBED_PUBLIC_KEYS_JSON", "{}")
 
     def require_auth(self) -> None:
         if not self.github_client_id or not self.github_client_secret or len(self.session_secret) < 32:

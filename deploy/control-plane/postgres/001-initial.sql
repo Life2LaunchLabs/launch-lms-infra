@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS embed_sessions (
-  id uuid PRIMARY KEY,
+  id varchar(36) PRIMARY KEY,
   project_id varchar(64) NOT NULL REFERENCES projects(id),
   environment varchar(32) NOT NULL,
   opaque_user_id varchar(128) NOT NULL,

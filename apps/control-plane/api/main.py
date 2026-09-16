@@ -4,17 +4,18 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import hashlib
+import os
 from pathlib import Path
 import sys
 
 import httpx
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
-from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(os.getenv("OPERATIONS_ROOT", str(Path(__file__).resolve().parents[3])))
 sys.path.insert(0, str(ROOT))
 
 from services.orchestrator.manifest import load_project  # noqa: E402
@@ -22,13 +23,16 @@ from services.deployer.candidate import validate_candidate  # noqa: E402
 from packages.connectors.github import GitHubAppCredentials  # noqa: E402
 from auth import COOKIE, create_session, exchange_and_authorize, login_url, require_operator  # noqa: E402
 from config import Settings  # noqa: E402
-from models import DeploymentObservation, Project  # noqa: E402
+from embed_auth import (DatabaseReplayStore, MemoryReplayStore, PROTOCOL, create_platform_session,
+                        origin_allowed, verify_host_token, verify_platform_session)  # noqa: E402
+from models import DeploymentObservation, IdempotencyRecord, Project  # noqa: E402
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.settings = Settings()
     if app.state.settings.environment == "development":
+        app.state.replay_store = MemoryReplayStore()
         app.state.engine = None
     else:
         engine = create_engine(app.state.settings.database_url, pool_pre_ping=True)
@@ -37,6 +41,7 @@ async def lifespan(app: FastAPI):
         with Session(engine) as session:
             session.merge(Project(id=manifest.project_id, manifest_revision=revision, enabled=True))
             session.commit()
+        app.state.replay_store = DatabaseReplayStore(engine)
         app.state.engine = engine
     yield
 
@@ -54,9 +59,100 @@ class DeploymentResult(BaseModel):
     image_digest: str
 
 
+class EmbedVerification(BaseModel):
+    project: str
+    environment: str
+    nonce: str
+    host_origin: str
+    token: str
+
+
+class FeedbackSubmission(BaseModel):
+    message: str
+    context: dict = Field(default_factory=dict)
+
+
 @app.get("/healthz")
 def health() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/sdk/v1/loader.js")
+def embed_loader() -> Response:
+    source = ROOT / "packages" / "embed-sdk" / "loader.js"
+    return Response(source.read_text(encoding="utf-8"), media_type="application/javascript", headers={
+        "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff",
+        "Access-Control-Allow-Origin": "*",
+    })
+
+
+@app.get("/embed/v1", response_class=HTMLResponse)
+def embed_document(project: str, environment: str) -> HTMLResponse:
+    manifest = load_project(project)
+    if not manifest.data["environments"].get(environment, {}).get("embed_enabled"):
+        raise HTTPException(404, "Embed is not enabled")
+    ancestors = " ".join(manifest.data["allowed_embed_origins"][environment])
+    html = "<!doctype html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Project tools</title><link rel='stylesheet' href='/assets/app.css'></head><body><div id='root'></div><script type='module' src='/assets/app.js'></script></body></html>"
+    return HTMLResponse(html, headers={
+        "Content-Security-Policy": f"default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; frame-ancestors {ancestors}; object-src 'none'; base-uri 'none'",
+        "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
+    })
+
+
+@app.get("/api/v1/embed/config")
+def embed_config(project: str, environment: str) -> dict:
+    manifest = load_project(project)
+    if not manifest.data["environments"].get(environment, {}).get("embed_enabled"):
+        raise HTTPException(404, "Embed is not enabled")
+    return {"protocol": PROTOCOL, "project": project, "environment": environment,
+            "allowed_origins": manifest.data["allowed_embed_origins"][environment]}
+
+
+@app.post("/api/v1/embed/session/verify")
+def verify_embed_session(payload: EmbedVerification) -> dict:
+    manifest = load_project(payload.project)
+    if payload.environment not in manifest.data["environments"]:
+        raise HTTPException(404, "Unknown environment")
+    claims = verify_host_token(payload.token, payload.nonce, payload.host_origin, manifest, app.state.settings, app.state.replay_store)
+    if claims["environment"] != payload.environment:
+        raise HTTPException(401, "Environment mismatch")
+    return {"platform_token": create_platform_session(app.state.settings, claims), "expires_in": 900}
+
+
+def embed_identity(authorization: str | None = Header(default=None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "Platform session required")
+    return verify_platform_session(app.state.settings, authorization.removeprefix("Bearer "))
+
+
+@app.get("/api/v1/embed/feed")
+def embed_feed(_: dict = Depends(embed_identity)) -> dict:
+    return {"feedback": [], "releases": [], "announcements": [],
+            "unread": {"feedback": 0, "releases": 0, "announcements": 0}}
+
+
+@app.post("/api/v1/embed/feedback", status_code=202)
+def submit_embed_feedback(payload: FeedbackSubmission, identity: dict = Depends(embed_identity), idempotency_key: str | None = Header(default=None)) -> dict:
+    if app.state.engine is None:
+        raise HTTPException(503, "Feedback queue is unavailable")
+    if not idempotency_key or len(idempotency_key) > 200 or not payload.message.strip() or len(payload.message) > 10_000:
+        raise HTTPException(400, "A valid idempotency key and feedback message are required")
+    context = {key: payload.context.get(key) for key in ("route", "theme", "viewport", "release") if key in payload.context}
+    key_hash = hashlib.sha256(f"{identity['project']}:{identity['sub']}:{idempotency_key}".encode()).hexdigest()
+    with Session(app.state.engine) as session:
+        existing = session.query(IdempotencyRecord).filter_by(
+            project_id=identity["project"], operation="feedback.create", key_hash=key_hash
+        ).one_or_none()
+        if existing:
+            return {"status": existing.status, "operation_id": existing.id}
+        record = IdempotencyRecord(
+            project_id=identity["project"], operation="feedback.create", key_hash=key_hash,
+            status="pending", result={"message": payload.message.strip(), "context": context,
+                                      "environment": identity["environment"], "opaque_user_id": identity["sub"],
+                                      "opaque_org_id": identity["org"], "role": identity["role"]},
+        )
+        session.add(record); session.commit(); session.refresh(record)
+        return {"status": "pending", "operation_id": record.id}
 
 
 @app.get("/api/v1/auth/github/login")

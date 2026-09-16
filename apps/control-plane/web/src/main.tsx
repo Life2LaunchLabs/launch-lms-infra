@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
+import EmbedApp from './embed'
 
 type Operator = { login: string; avatar_url?: string }
 type Status = { status?: string; paused?: boolean; running?: unknown; queued?: unknown }
@@ -25,4 +26,5 @@ function App() {
   </main>
 }
 
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App /></React.StrictMode>)
+const application = location.pathname === '/embed/v1' ? <EmbedApp /> : <App />
+createRoot(document.getElementById('root')!).render(<React.StrictMode>{application}</React.StrictMode>)
