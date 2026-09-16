@@ -26,8 +26,9 @@ Existing org switching depends on shared session cookies. Host-only mode also
 requires a short-lived, one-time authenticated handoff when a user follows a
 link from one organization host to another; verify Google and enterprise SSO,
 direct links, logout, and default-org redirects. `session_handoff_verified` and
-`unstable.cutover_approved` start false. New managed installations and the
-nested unstable deployment refuse to proceed until those gates are reviewed and
+`unstable.cutover_approved` must remain false until their exact commit, CI, and
+TLS evidence is recorded beside them. New managed installations and the nested
+unstable deployment refuse to proceed until those gates are reviewed and
 enabled, even though OpenTofu can prepare the DNS records beforehand.
 
 While the existing unstable installation still uses the operations-domain apex,
@@ -38,6 +39,15 @@ the repository deployment workflow to provision and renew the DNS-challenge
 certificate and prove public DNS/TLS without exposing the application under a
 domain it has not adopted. The preflight-only site disappears automatically
 when the runtime domain is migrated.
+
+The protected **Unstable domain cutover** workflow is the only supported live
+migration path. It requires an explicit target-domain confirmation, rewrites
+only the reviewed non-secret runtime keys, retains a mode-0600 pre-cutover
+environment snapshot, deploys under the shared unstable lock, and verifies
+public TLS, the tester access gate, apex and tenant routing, and the `.dev`
+redirect. Any apply or verification failure restores the snapshot and redeploys
+the former domain automatically. The same workflow exposes an explicit rollback
+action; do not edit the host `.env` manually.
 
 The `.dev` apex remains on the old unstable host while
 `dns.operations_apex_cutover` is false. The control-plane deployment script also

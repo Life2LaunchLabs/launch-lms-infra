@@ -7,9 +7,12 @@ operations:
 
 application:
   cookie_scope: host-only
-  # Keep false until tenant-to-tenant login handoff and legacy-cookie expiry
-  # have been verified against the exact Launch LMS candidate revision.
-  session_handoff_verified: false
+  # Verified by the isolated host-only browser lane against this exact candidate.
+  session_handoff_verified: true
+  session_handoff_evidence:
+    app_commit: 03fab412c2d8c42d37b653c6cfffdfdabc38e387
+    build_run_id: "35156260723"
+    pull_request: 75
   production:
     base_domain: life2launch.app
     origin_template: https://{organization}.life2launch.app
@@ -17,7 +20,10 @@ application:
     base_domain: unstable.life2launch.app
     origin_template: https://{organization}.unstable.life2launch.app
     operations_surface_url: https://life2launch.dev
-    cutover_approved: false
+    cutover_approved: true
+    cutover_evidence:
+      tls_preflight_run_id: "35158254462"
+      verified_path: /.well-known/launch-lms-domain-preflight
 
 dns:
   app_zone: life2launch.app

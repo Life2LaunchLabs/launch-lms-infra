@@ -235,6 +235,38 @@ class DeploymentTests(unittest.TestCase):
                 verifier.configured_preflight_url(active),
             )
 
+    def test_unstable_domain_migration_is_idempotent_and_rollback_preserves_secrets(self):
+        migration=load('migrate-unstable-domain')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            env=root/'.env'
+            original=(
+                "LAUNCHLMS_DOMAIN='life2launch.dev'\n"
+                "LAUNCHLMS_FRONTEND_DOMAIN='life2launch.dev'\n"
+                "NEXT_PUBLIC_LAUNCHLMS_DOMAIN='life2launch.dev'\n"
+                "LAUNCHLMS_AUTH_JWT_SECRET_KEY='do-not-change-this-secret-value'\n"
+            )
+            env.write_text(original)
+            env.chmod(0o600)
+            (root/'.deployment-environment').write_text('unstable\n')
+            migration.ROOT=root
+            migration.ENV_PATH=env
+            migration.BACKUP_PATH=root/'.deploy-state/pre-nested-domain-cutover.env'
+            migration.apply()
+            migrated=migration.read_env(env)
+            self.assertEqual('unstable.life2launch.app', migrated['LAUNCHLMS_DOMAIN'])
+            self.assertEqual('host-only', migrated['LAUNCHLMS_COOKIE_SCOPE'])
+            self.assertEqual('life2launch.dev', migrated['LAUNCHLMS_LEGACY_DOMAIN'])
+            self.assertEqual('life2launch.app', migrated['NEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN'])
+            self.assertEqual('do-not-change-this-secret-value', migrated['LAUNCHLMS_AUTH_JWT_SECRET_KEY'])
+            backup=migration.BACKUP_PATH.read_text()
+            self.assertEqual(original, backup)
+            self.assertEqual(0o600, migration.BACKUP_PATH.stat().st_mode & 0o777)
+            migration.apply()
+            self.assertEqual(backup, migration.BACKUP_PATH.read_text())
+            migration.rollback()
+            self.assertEqual(original, env.read_text())
+
     def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)
