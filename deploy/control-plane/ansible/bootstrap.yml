@@ -193,8 +193,7 @@
 
     - name: Enable the host firewall
       ansible.builtin.command: ufw --force enable
-      register: ufw_enable
-      changed_when: "'already enabled' not in ufw_enable.stdout"
+      changed_when: false
 
     - name: Configure the SSH intrusion jail
       ansible.builtin.copy:
