@@ -31,7 +31,7 @@ class GitHubAppCredentials:
         expires = datetime.fromisoformat(value["expires_at"].replace("Z", "+00:00"))
         if expires <= datetime.now(timezone.utc):
             raise RuntimeError("GitHub returned an expired installation token")
-        return GitHubConnector(value["token"], api_url=api_url, transport=transport)
+        return GitHubConnector(value["token"], api_url=api_url, transport=transport, expires_at=expires)
 
 
 @dataclass(frozen=True)
@@ -39,6 +39,7 @@ class GitHubConnector:
     token: str = field(repr=False)
     api_url: str = "https://api.github.com"
     transport: httpx.AsyncBaseTransport | None = None
+    expires_at: datetime | None = None
 
     def headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}", "Accept": "application/vnd.github+json"}

@@ -21,7 +21,7 @@ class ApiAuthenticationTests(unittest.TestCase):
             codex.chmod(0o755)
             # End after authentication; no Git/network/Symphony side effects.
             script = root / 'entrypoint.sh'
-            script.write_text((ROOT / 'symphony/entrypoint.sh').read_text().split(': "${GH_TOKEN')[0]+'echo AUTH_READY\n')
+            script.write_text((ROOT / 'symphony/entrypoint.sh').read_text().split(': "${OPERATIONS_BROKER_URL')[0]+'echo AUTH_READY\n')
             env = dict(os.environ, HOME=str(root / 'home'), PATH=str(bin_dir)+':'+os.environ['PATH'], SYMPHONY_API_KEY_FILE=str(secret), LOGIN_MARKER=str(marker))
             result = subprocess.run(['bash', str(script)], env=env, text=True, capture_output=True)
             return result, marker.exists()
@@ -44,3 +44,17 @@ class ApiAuthenticationTests(unittest.TestCase):
         self.assertTrue(called)
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('AUTH_READY', result.stdout)
+
+    def test_runner_uses_brokered_github_token_without_exporting_it_to_agents(self):
+        entrypoint = (ROOT / 'symphony/entrypoint.sh').read_text()
+        refresher = (ROOT / 'symphony/refresh_github_auth.py').read_text()
+        runtime = (ROOT / 'services/orchestrator/runtime.yaml').read_text()
+        self.assertIn('refresh_github_auth.py --once', entrypoint)
+        self.assertIn('/internal/v1/github/installation-token', refresher)
+        self.assertIn('input=token', refresher)
+        self.assertNotIn('token]', refresher)
+        self.assertNotIn('${GH_TOKEN:?', entrypoint)
+        self.assertNotIn('shell_environment_policy.inherit=all', runtime)
+        self.assertIn('shell_environment_policy.ignore_default_excludes=false', runtime)
+        self.assertNotIn('JIRA_*', runtime)
+        self.assertNotIn('GH_TOKEN', runtime)

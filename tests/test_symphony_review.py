@@ -13,6 +13,7 @@ SHA = 'a' * 40
 class ReviewGateTests(unittest.TestCase):
     def good_pr(self):
         return {'state': 'OPEN', 'isDraft': False, 'baseRefName': 'dev', 'headRefOid': SHA,
+                'baseRefOid': 'b' * 40,
                 'statusCheckRollup': [{'name': x, 'conclusion': 'SUCCESS'} for x in gate.REQUIRED]}
 
     def test_exact_reviewed_head_and_all_checks_required(self):
@@ -56,6 +57,7 @@ class ReviewGateTests(unittest.TestCase):
             (root / 'report.md').write_text('report')
             manifest = root / '.symphony-review-request.json'
             manifest.write_text(json.dumps({'issue': 'BOT-217', 'sha': SHA, 'pr': 72,
+                'base_sha': 'b' * 40, 'attempt': 1, 'turns': 2, 'duration_ms': 1000, 'checks': {'unit': 'passed'},
                 'synthetic_evidence_only': True, 'files': ['report.md'], 'summary': 'review'}))
             state = {'fields': {'issuetype': {'subtask': False}, 'status': {'name': 'In Progress'}, 'labels': ['symphony']}}
             with patch.object(gate, 'jira', return_value=state), patch.object(gate, 'pr_info', return_value=self.good_pr()), patch.object(gate, 'upload', side_effect=RuntimeError('upload failed')), patch.object(gate, 'transition') as transition:
@@ -69,3 +71,12 @@ class ReviewGateTests(unittest.TestCase):
         self.assertIn('Never move an issue into Merge', workflow)
         self.assertIn('--match-head-commit <reviewed-sha>', workflow)
         self.assertIn("s/^  active_states:.*/  active_states: []/", (ROOT / 'symphony/entrypoint.sh').read_text())
+
+    def test_base_revision_and_run_metadata_are_required(self):
+        pr = self.good_pr()
+        gate.check_pr(pr, SHA, 'b' * 40)
+        with self.assertRaises(ValueError):
+            gate.check_pr(pr, SHA, 'c' * 40)
+        rendered = (ROOT / 'services/orchestrator/render_workflow.py').read_text()
+        self.assertIn('tested base SHA', rendered)
+        self.assertIn('turn count', rendered)

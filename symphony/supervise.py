@@ -20,6 +20,7 @@ def stop(*_):
 signal.signal(signal.SIGTERM, stop)
 signal.signal(signal.SIGINT, stop)
 try:
+    children.append(subprocess.Popen(['python3', '/opt/symphony/refresh_github_auth.py']))
     children.append(subprocess.Popen(['python3', '/opt/symphony/review_gate.py']))
     children.append(subprocess.Popen(['symphony', '--i-understand-that-this-will-be-running-without-the-usual-guardrails',
                                      '--logs-root', str(Path.home() / 'logs'), str(Path.home() / 'WORKFLOW.md')]))

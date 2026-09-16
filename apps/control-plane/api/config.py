@@ -15,6 +15,7 @@ class Settings:
     github_app_id: str = os.getenv("GITHUB_APP_ID", "")
     github_installation_id: str = os.getenv("GITHUB_APP_INSTALLATION_ID", "")
     github_app_private_key: str = os.getenv("GITHUB_APP_PRIVATE_KEY", "")
+    runner_broker_key: str = os.getenv("OPERATIONS_RUNNER_BROKER_KEY", "")
     jira_base_url: str = os.getenv("JIRA_BASE_URL", "")
     jira_delivery_email: str = os.getenv("JIRA_DELIVERY_EMAIL", "")
     jira_delivery_token: str = os.getenv("JIRA_DELIVERY_TOKEN", "")

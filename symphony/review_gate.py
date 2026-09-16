@@ -75,12 +75,13 @@ def labels(issue, add=(), remove=()):
 
 def pr_info(number):
     raw = subprocess.check_output(['gh', 'pr', 'view', str(number), '--repo', REPO, '--json',
-        'number,url,state,isDraft,baseRefName,headRefOid,statusCheckRollup'], text=True)
+        'number,url,state,isDraft,baseRefName,baseRefOid,headRefOid,statusCheckRollup'], text=True)
     return json.loads(raw)
 
 
-def check_pr(pr, sha):
-    if pr['state'] != 'OPEN' or pr['isDraft'] or pr['baseRefName'] != 'dev' or pr['headRefOid'] != sha:
+def check_pr(pr, sha, base_sha=None):
+    if (pr['state'] != 'OPEN' or pr['isDraft'] or pr['baseRefName'] != 'dev' or pr['headRefOid'] != sha
+            or (base_sha is not None and pr.get('baseRefOid') != base_sha)):
         raise ValueError('PR must be open, ready, target dev and match reviewed SHA')
     checks = {x.get('name', x.get('context')): x for x in pr['statusCheckRollup']}
     for name in REQUIRED:
@@ -101,6 +102,17 @@ def upload(issue, path):
                 {'Content-Type': 'multipart/form-data; boundary=' + boundary, 'X-Atlassian-Token': 'no-check'})
 
 
+def record_run(payload):
+    broker_url = os.environ['OPERATIONS_BROKER_URL'].rstrip('/')
+    broker_key = os.environ['OPERATIONS_RUNNER_BROKER_KEY']
+    request = Request(
+        broker_url + '/internal/v1/runs/review', data=json.dumps(payload).encode(), method='POST',
+        headers={'Content-Type': 'application/json', 'X-Runner-Key': broker_key},
+    )
+    with urlopen(request, timeout=30) as response:
+        return json.loads(response.read())
+
+
 def submit(path):
     request = json.loads(path.read_text())
     if path.is_symlink():
@@ -111,6 +123,16 @@ def submit(path):
     sha = request['sha']
     if not re.fullmatch(r'[a-f0-9]{40}', sha):
         raise ValueError('Full commit SHA required')
+    base_sha = request.get('base_sha', '')
+    if not re.fullmatch(r'[a-f0-9]{40}', base_sha):
+        raise ValueError('Full tested base SHA required')
+    attempt = request.get('attempt')
+    turns = request.get('turns')
+    duration_ms = request.get('duration_ms')
+    if not isinstance(attempt, int) or attempt < 0 or not isinstance(turns, int) or turns < 1:
+        raise ValueError('Non-negative attempt and positive turn counts are required')
+    if not isinstance(duration_ms, int) or duration_ms < 0 or not isinstance(request.get('checks'), dict):
+        raise ValueError('Duration and structured check results are required')
     if request.get('synthetic_evidence_only') is not True:
         raise ValueError('Evidence must be confirmed free of private learner data and secrets')
     state = jira('GET', f'issue/{issue}?fields=status,issuetype,labels')['fields']
@@ -122,7 +144,7 @@ def submit(path):
     if state['issuetype']['subtask'] or state['status']['name'] != 'In Progress' or 'symphony' not in state['labels']:
         raise ValueError('Only active opted-in parent tasks may request handoff')
     pr = pr_info(int(request['pr']))
-    check_pr(pr, sha)
+    check_pr(pr, sha, base_sha)
     paths = evidence_paths(path.parent, request['files'])
     workflow_metadata_path = Path.home() / 'rendered-workflow.json'
     workflow_metadata = json.loads(workflow_metadata_path.read_text()) if workflow_metadata_path.exists() else {}
@@ -147,7 +169,7 @@ def submit(path):
                policy_line +
                '\n\nReview the report/screenshots and PR. Move this issue to Merge to approve this exact revision.' +
                '\n\nFor changes, describe them and move this issue to To Do. Done remains your final product signoff.')
-    check_pr(pr_info(int(request['pr'])), sha)
+    check_pr(pr_info(int(request['pr'])), sha, base_sha)
     current = jira('GET', f'issue/{issue}?fields=status,labels')['fields']
     if current['status']['name'] != 'In Progress' or 'symphony' not in current['labels']:
         raise ValueError('Owner changed task state during evidence upload')
@@ -156,6 +178,14 @@ def submit(path):
               'product_policy_commit': workflow_metadata.get('product_commit'),
               'rendered_workflow_sha256': workflow_metadata.get('rendered_workflow_sha256')}
     jira('PUT', f'issue/{issue}/properties/{PROPERTY}', record)
+    record_run({
+        'project_id': MANIFEST.project_id, 'issue_key': issue, 'attempt': attempt,
+        'workspace': path.parent.name, 'policy_revision': workflow_metadata.get('product_commit', ''),
+        'workflow_hash': workflow_metadata.get('rendered_workflow_sha256', ''),
+        'base_sha': base_sha, 'head_sha': sha, 'turns': turns, 'duration_ms': duration_ms,
+        'checks': request['checks'], 'evidence': {'files': [str(p.relative_to(path.parent)) for p in paths]},
+        'disposition': 'in_review',
+    })
     transition(issue, 'In Review')
     path.rename(path.with_name('.symphony-review-submitted.json'))
     print('Evidence submitted for ' + issue, flush=True)

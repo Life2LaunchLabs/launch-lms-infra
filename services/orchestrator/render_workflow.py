@@ -66,6 +66,14 @@ def render(project_id: str, commit: str, policy: bytes) -> tuple[str, dict[str, 
         "{{ issue.description }}\n"
         "{% if attempt %}Resume the existing workspace, workpad, and PR for retry {{ attempt }}; do not repeat completed work.{% endif %}\n\n"
         f"Runtime recovery contract: `{json.dumps(recovery, sort_keys=True)}`\n\n"
+        "# Platform handoff contract\n\n"
+        "The Jira and GitHub credentials are platform capabilities, not task data. Never inspect credential "
+        "stores or attempt to recover excluded environment values. Use authenticated `gh` commands and the "
+        "platform evidence handoff only. Create `.symphony-review-request.json` atomically with: issue, PR "
+        "number, full tested head SHA, tested base SHA, integer attempt number (zero for the initial run), summary, evidence file paths, UI-change "
+        "boolean, synthetic-evidence confirmation, checks, turn count, and duration milliseconds. The platform "
+        "verifies the current head/checks, uploads evidence, records policy and run metadata, and performs the "
+        "In Review transition. A changed head invalidates the request.\n\n"
         "# Product-owned workflow\n\n" + policy_text + "\n"
     )
     metadata = {
