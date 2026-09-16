@@ -10,6 +10,7 @@ source:
     workflow: WORKFLOW.md
     architecture: ARCHITECTURE.md
     product: docs/product/manifest.json
+    design: docs/design/README.md
     feedback: docs/product/feedback-policy.yaml
 tracker:
   provider: jira

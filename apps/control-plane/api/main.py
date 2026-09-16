@@ -30,6 +30,7 @@ from config import Settings  # noqa: E402
 from embed_auth import (DatabaseReplayStore, MemoryReplayStore, PROTOCOL, create_platform_session,
                         origin_allowed, verify_host_token, verify_platform_session)  # noqa: E402
 from models import Announcement, DeploymentObservation, IdempotencyRecord, PendingAttachment, Project, UnreadMarker  # noqa: E402
+from planning import router as planning_router  # noqa: E402
 
 
 @asynccontextmanager
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Launch Operations", version="0.1.0", lifespan=lifespan)
+app.include_router(planning_router)
 
 
 class CandidateDispatch(BaseModel):
