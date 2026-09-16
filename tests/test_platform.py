@@ -149,6 +149,9 @@ class ConnectorTests(unittest.TestCase):
                 assertion = request.headers["authorization"].removeprefix("Bearer ")
                 claims = jwt.decode(assertion, private.public_key(), algorithms=["RS256"], options={"verify_aud": False})
                 self.assertEqual(claims["iss"], "123")
+                self.assertEqual(json.loads(request.content), {
+                    "repositories": ["repo"], "permissions": {"actions": "write"},
+                })
                 return httpx.Response(201, json={
                     "token": "installation-secret",
                     "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=50)).isoformat(),
@@ -162,9 +165,12 @@ class ConnectorTests(unittest.TestCase):
         self.assertNotIn("PRIVATE KEY", repr(credentials))
 
         async def exercise():
-            connector = await credentials.connector("https://api.github.test", httpx.MockTransport(handler))
+            connector = await credentials.connector("owner/repo", {"actions": "write"},
+                                                    "https://api.github.test", httpx.MockTransport(handler))
             self.assertNotIn("installation-secret", repr(connector))
             await connector.dispatch("owner/repo", "deploy.yaml", "main", {"environment": "unstable"})
+            with self.assertRaisesRegex(ValueError, "different repository"):
+                await connector.dispatch("owner/other", "deploy.yaml", "main", {})
             return await connector.workflow_run("owner/repo", 55)
 
         self.assertEqual(asyncio.run(exercise())["conclusion"], "success")
