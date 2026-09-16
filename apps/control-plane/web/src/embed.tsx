@@ -8,7 +8,14 @@ type FeedItem = { id?: string; revision?: string; title?: string; body?: string;
 type Feed = { feedback: FeedbackItem[]; releases: FeedItem[]; announcements: FeedItem[]; unread: Record<Panel, number> }
 
 function allowed(origin: string, patterns: string[]) {
-  return patterns.some(pattern => origin === pattern || (pattern.includes('*.') && origin.startsWith(pattern.split('*.')[0]) && origin.slice(pattern.split('*.')[0].length).endsWith(`.${pattern.split('*.')[1]}`)))
+  return patterns.some(pattern => {
+    if (origin === pattern) return true
+    if (!pattern.includes('*.')) return false
+    const [prefix, domain] = pattern.split('*.')
+    const suffix = `.${domain}`
+    if (!origin.startsWith(prefix) || !origin.endsWith(suffix)) return false
+    return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(origin.slice(prefix.length, -suffix.length))
+  })
 }
 
 export default function EmbedApp() {

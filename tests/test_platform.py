@@ -330,7 +330,7 @@ class EmbedSecurityTests(unittest.TestCase):
         return self.jwt.encode(claims, self.next_private if next_key else self.private, algorithm="EdDSA",
                                headers={"kid": "launch-ops-2026-02" if next_key else "launch-ops-2026-01"})
 
-    def verify(self, claims, origin="https://tenant.life2launch.dev", store=None, next_key=False):
+    def verify(self, claims, origin="https://tenant.unstable.life2launch.app", store=None, next_key=False):
         return self.embed.verify_host_token(
             self.token(claims, next_key), claims["nonce"], origin, load_project("launch-lms"),
             self.settings(), store or self.embed.MemoryReplayStore(),
@@ -353,6 +353,8 @@ class EmbedSecurityTests(unittest.TestCase):
                 self.verify(claims)
         with self.assertRaisesRegex(HTTPException, "Host origin"):
             self.verify(self.claims(), origin="https://attacker.example")
+        with self.assertRaisesRegex(HTTPException, "Host origin"):
+            self.verify(self.claims(), origin="https://tenant.staging.unstable.life2launch.app")
         claims = self.claims(); store = self.embed.MemoryReplayStore()
         self.verify(claims, store=store)
         with self.assertRaisesRegex(HTTPException, "already used"):
@@ -370,7 +372,7 @@ class EmbedSecurityTests(unittest.TestCase):
         main = import_api_module("main")
         response = main.embed_document("launch-lms", "unstable")
         policy = response.headers["content-security-policy"]
-        self.assertIn("frame-ancestors https://life2launch.dev https://*.life2launch.dev", policy)
+        self.assertIn("frame-ancestors https://unstable.life2launch.app https://*.unstable.life2launch.app", policy)
         self.assertEqual(response.headers["cache-control"], "no-store")
         with self.assertRaises(HTTPException) as error:
             main.embed_document("launch-lms", "production")

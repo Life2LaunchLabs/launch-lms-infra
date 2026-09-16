@@ -31,7 +31,10 @@ def origin_allowed(origin: str, allowed: list[str]) -> bool:
             return True
         if "*." in pattern:
             prefix, domain = pattern.split("*.", 1)
-            if origin.startswith(prefix) and origin.removeprefix(prefix).endswith("." + domain):
+            suffix = "." + domain
+            if origin.startswith(prefix) and origin.endswith(suffix) and re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", origin[len(prefix):-len(suffix)]
+            ):
                 return True
     return False
 

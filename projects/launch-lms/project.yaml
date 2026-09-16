@@ -49,8 +49,8 @@ environments:
     embed_enabled: false
 allowed_embed_origins:
   unstable:
-    - https://life2launch.dev
-    - https://*.life2launch.dev
+    - https://unstable.life2launch.app
+    - https://*.unstable.life2launch.app
   production: []
 token_verification:
   algorithm: EdDSA
