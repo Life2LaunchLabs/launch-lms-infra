@@ -1,8 +1,18 @@
 from pathlib import Path
 from env_file import read_env
+from environment_topology import load_topology
 from urllib.parse import urlparse
 
 env = read_env(Path('.env'))
+topology = load_topology(Path(__file__).resolve().parents[1] / 'deploy/environments/launch-lms.yaml')
+if env.get('LAUNCHLMS_DOMAIN') == topology['application']['unstable']['base_domain']:
+    for key in ('LAUNCHLMS_COOKIE_SCOPE', 'NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE'):
+        if env.get(key) != 'host-only':
+            raise ValueError(f'{key} must be host-only on nested unstable')
+    if env.get('NEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN', '').lstrip('.') != topology['dns']['app_zone']:
+        raise ValueError('Nested unstable must expire legacy cookies from the application parent domain')
+    if not topology['application']['unstable']['cutover_approved']:
+        raise ValueError('Nested unstable application cutover has not been approved')
 if env.get('LAUNCHLMS_DEVELOPMENT_MODE') != 'false' or env.get('LAUNCHLMS_ENV') != 'prod':
     raise ValueError('Both environments must use production runtime mode')
 if env.get('LAUNCHLMS_INTERNAL_BACKEND_URL') != 'http://localhost:9000':
@@ -34,6 +44,8 @@ if Path('.deployment-environment').read_text().strip() == 'unstable':
             'LAUNCHLMS_FEEDBACK_JIRA_PROJECT_KEY',
             'LAUNCHLMS_GITHUB_TOKEN',
         })
+    if env.get('LAUNCHLMS_OPERATIONS_SURFACE_ENABLED') == 'true':
+        allowed.update({'LAUNCHLMS_OPERATIONS_SUBJECT_SECRET', 'LAUNCHLMS_OPERATIONS_TOKEN_PRIVATE_KEY'})
     for key, value in env.items():
         if value and any(word in key for word in forbidden) and key not in allowed:
             raise ValueError(f'Remove external integration credential from unstable: {key}')

@@ -1,0 +1,5 @@
+all:
+  hosts:
+    operations:
+      ansible_host: 143.110.225.231
+      ansible_user: root

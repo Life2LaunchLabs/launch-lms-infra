@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import BinaryIO
+from urllib.parse import urlparse
 
 import httpx
 
@@ -21,10 +22,24 @@ class JiraAdapter(TrackerAdapter):
     def __init__(self, credentials: JiraCredentials, transport: httpx.AsyncBaseTransport | None = None):
         self.credentials = credentials
         self.transport = transport
+        base = urlparse(credentials.base_url.rstrip("/"))
+        if base.scheme != "https" or not base.hostname or base.username or base.password or base.query or base.fragment:
+            raise ValueError("Jira base URL must be HTTPS without query or fragment")
+        prefix = base.path.rstrip("/")
+        if base.hostname == "api.atlassian.com":
+            if not prefix.startswith("/ex/jira/") or len(prefix.split("/")) != 4:
+                raise ValueError("Jira gateway URL must be https://api.atlassian.com/ex/jira/<cloudId>")
+        elif prefix:
+            raise ValueError("Jira gateway URL must be https://api.atlassian.com/ex/jira/<cloudId>")
+        self._origin = f"{base.scheme}://{base.netloc}"
+        self._api_prefix = prefix
+
+    def _path(self, route: str) -> str:
+        return self._api_prefix + route
 
     def _client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
-            base_url=self.credentials.base_url.rstrip("/"),
+            base_url=self._origin,
             auth=(self.credentials.email, self.credentials.api_token),
             headers={"Accept": "application/json"}, timeout=30, transport=self.transport,
         )
@@ -40,7 +55,7 @@ class JiraAdapter(TrackerAdapter):
 
     async def create_issue(self, project: str, summary: str, description: dict, properties: dict, idempotency_key: str) -> TrackerIssue:
         async with self._client() as client:
-            response = await client.post("/rest/api/3/issue", json={"fields": {
+            response = await client.post(self._path("/rest/api/3/issue"), json={"fields": {
                 "project": {"key": project}, "issuetype": {"name": "Task"},
                 "summary": summary, "description": description,
             }}, headers={"X-Idempotency-Key": idempotency_key})
@@ -51,7 +66,7 @@ class JiraAdapter(TrackerAdapter):
 
     async def get_issue(self, key: str) -> TrackerIssue:
         async with self._client() as client:
-            response = await client.get(f"/rest/api/3/issue/{key}", params={
+            response = await client.get(self._path(f"/rest/api/3/issue/{key}"), params={
                 "fields": "summary,status,updated", "properties": "*all",
             })
             response.raise_for_status()
@@ -59,23 +74,23 @@ class JiraAdapter(TrackerAdapter):
 
     async def comments(self, key: str) -> list[dict]:
         async with self._client() as client:
-            response = await client.get(f"/rest/api/3/issue/{key}/comment", params={"orderBy": "created"})
+            response = await client.get(self._path(f"/rest/api/3/issue/{key}/comment"), params={"orderBy": "created"})
             response.raise_for_status()
             return response.json().get("comments", [])
 
     async def add_comment(self, key: str, body: dict, public: bool) -> dict:
         async with self._client() as client:
             if public:
-                response = await client.post(f"/rest/servicedeskapi/request/{key}/comment", json={"body": body, "public": True})
+                response = await client.post(self._path(f"/rest/servicedeskapi/request/{key}/comment"), json={"body": body, "public": True})
             else:
-                response = await client.post(f"/rest/api/3/issue/{key}/comment", json={"body": body})
+                response = await client.post(self._path(f"/rest/api/3/issue/{key}/comment"), json={"body": body})
             response.raise_for_status()
             return response.json()
 
     async def attach(self, key: str, filename: str, content_type: str, stream: BinaryIO) -> dict:
         async with self._client() as client:
             response = await client.post(
-                f"/rest/api/3/issue/{key}/attachments",
+                self._path(f"/rest/api/3/issue/{key}/attachments"),
                 headers={"X-Atlassian-Token": "no-check"},
                 files={"file": (filename, stream, content_type)},
             )
@@ -85,16 +100,16 @@ class JiraAdapter(TrackerAdapter):
 
     async def transition(self, key: str, status: str) -> None:
         async with self._client() as client:
-            response = await client.get(f"/rest/api/3/issue/{key}/transitions")
+            response = await client.get(self._path(f"/rest/api/3/issue/{key}/transitions"))
             response.raise_for_status()
             transition = next((item for item in response.json().get("transitions", []) if item.get("to", {}).get("name") == status), None)
             if not transition:
                 raise ValueError(f"transition to {status!r} is unavailable for {key}")
-            result = await client.post(f"/rest/api/3/issue/{key}/transitions", json={"transition": {"id": transition["id"]}})
+            result = await client.post(self._path(f"/rest/api/3/issue/{key}/transitions"), json={"transition": {"id": transition["id"]}})
             result.raise_for_status()
 
     async def set_properties(self, key: str, properties: dict) -> None:
         async with self._client() as client:
             for name, value in properties.items():
-                response = await client.put(f"/rest/api/3/issue/{key}/properties/{name}", json=value)
+                response = await client.put(self._path(f"/rest/api/3/issue/{key}/properties/{name}"), json=value)
                 response.raise_for_status()

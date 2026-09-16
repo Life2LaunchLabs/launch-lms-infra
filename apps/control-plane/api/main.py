@@ -128,8 +128,8 @@ async def dispatch_candidate(project_id: str, environment: str, payload: Candida
         candidate = validate_candidate(payload.candidate, manifest.data)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    connector = await github_app(app.state.settings).connector()
     deployment = manifest.data["deployment"]
+    connector = await github_app(app.state.settings).connector(deployment["repository"], {"contents": "write"})
     await connector.repository_dispatch(deployment["repository"], "unstable-candidate", candidate)
     return {"status": "requested", "source_sha": candidate["source_sha"], "image_digest": candidate["image_digest"]}
 
@@ -141,8 +141,8 @@ async def observe_deployment(project_id: str, environment: str, payload: Deploym
     manifest = load_project(project_id)
     if environment not in manifest.data["environments"]:
         raise HTTPException(404, "Unknown environment")
-    connector = await github_app(app.state.settings).connector()
     deployment = manifest.data["deployment"]
+    connector = await github_app(app.state.settings).connector(deployment["repository"], {"actions": "read"})
     run = await connector.workflow_run(deployment["repository"], payload.run_id)
     if run.get("path", "").split("@", 1)[0] != f".github/workflows/{deployment['workflow']}":
         raise HTTPException(409, "Observed run is not the registered deployment workflow")

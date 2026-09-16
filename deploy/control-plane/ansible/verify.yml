@@ -1,0 +1,33 @@
+---
+- name: Verify the operations host contract
+  hosts: operations
+  become: true
+  gather_facts: true
+  tasks:
+    - name: Read service facts
+      ansible.builtin.service_facts:
+
+    - name: Read the managed-host record
+      ansible.builtin.slurp:
+        src: /etc/launch-operations/managed-host.json
+      register: managed_host
+
+    - name: Verify capacity, runtime, and isolation
+      ansible.builtin.assert:
+        that:
+          - ansible_memtotal_mb >= 7800
+          - ansible_swaptotal_mb >= 3900
+          - ansible_mounts | selectattr("mount", "equalto", "/") | map(attribute="size_available") | first > 100000000000
+          - ansible_facts.services["docker.service"].state == "running"
+          - ansible_facts.services["fail2ban.service"].state == "running"
+          - (managed_host.content | b64decode | from_json).schema_version == 1
+
+    - name: Verify Docker Compose
+      ansible.builtin.command: docker compose version
+      changed_when: false
+
+    - name: Verify no operations service is publicly activated before secrets and DNS
+      ansible.builtin.command: docker ps --format {% raw %}'{{.Names}}'{% endraw %}
+      register: containers
+      changed_when: false
+      failed_when: "'launch-operations' in containers.stdout or 'launch-symphony' in containers.stdout"

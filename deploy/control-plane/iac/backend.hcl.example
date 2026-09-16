@@ -1,0 +1,4 @@
+bucket = "REPLACE_WITH_VERSIONED_PRIVATE_SPACES_BUCKET"
+endpoints = {
+  s3 = "https://sfo3.digitaloceanspaces.com"
+}

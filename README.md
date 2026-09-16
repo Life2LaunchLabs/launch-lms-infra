@@ -89,10 +89,11 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    allow TCP 80 and 443 from everywhere, UDP 443 from everywhere for HTTP/3,
    and TCP 22 only from trusted administration/deployment sources. Do not expose
    PostgreSQL, Redis, Ollama, or application container ports publicly.
-2. Point the environment domain's nameservers to DigitalOcean DNS. Create A
-   records for `@` and `*` pointing to this droplet (and AAAA only if IPv6 is
-   configured). Use a separate registrable domain for unstable. The current
-   Caddy plugin is for DigitalOcean; other DNS providers need the matching plugin.
+2. Public domain topology and DigitalOcean records are managed from
+   `deploy/environments/launch-lms.yaml` and the OpenTofu stack. Production uses
+   `*.life2launch.app`; unstable uses `unstable.life2launch.app` and
+   `*.unstable.life2launch.app`. The Caddy plugin is for DigitalOcean; other DNS
+   providers need the matching plugin.
 3. Connect using the key selected during droplet creation:
 
    ```bash
@@ -103,7 +104,7 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    operator with Docker access and ownership of `/opt/launch-lms`:
    ```bash
    apt-get update
-   apt-get install -y ca-certificates curl git python3
+   apt-get install -y ca-certificates curl git python3 python3-yaml
    curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
    # Inspect the installer before executing it.
    sh /tmp/get-docker.sh
@@ -144,9 +145,9 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    cd /opt/launch-lms
    bash setup.sh unstable /tmp/candidate.json
    ```
-   Setup prompts for the domain, a separate administrator password, and DNS token.
-   Unstable also prompts for the production domain (to reject nested cookie
-   domains) and shared tester HTTP credentials. These are an outer access gate;
+   Setup reads the reviewed domain and host-only cookie policy from the versioned
+   environment topology, then prompts for a separate administrator password, DNS
+   token, and shared tester HTTP credentials. These are an outer access gate;
    each tester still signs into their own Launch LMS account afterward. A
    successful tester prompt issues a secure 12-hour gate cookie shared by the
    unstable apex and organization subdomains, leaving the Authorization header
@@ -185,35 +186,36 @@ For wildcard TLS, look for `certificate obtained successfully` for
 does not cause Caddy to serve that domain until `.env` and `Caddyfile.active`
 name it.
 
-## Move two GoDaddy domains to DigitalOcean DNS
+## Managed application and operations DNS
 
-Use one registrable domain for production and a different one for unstable. In
-the commands and checklists below, substitute your actual values for
-`PROD_DOMAIN`, `UNSTABLE_DOMAIN`, `PROD_IP`, and `UNSTABLE_IP`.
+The reviewed source of truth is `deploy/environments/launch-lms.yaml`. Do not
+create deployment records manually: the protected control-plane host workflow
+plans and applies the corresponding DigitalOcean records.
 
 For the current installation those values are:
 
 | Target | Domain | IPv4 |
 | --- | --- | --- |
 | Production | `life2launch.app` | `146.190.134.27` |
-| Unstable | `life2launch.dev` | `137.184.34.50` |
+| Unstable | `unstable.life2launch.app` | `137.184.34.50` |
+| Operations, after cutover | `life2launch.dev` | `143.110.225.231` |
 
-Do the unstable domain first. Its setup is reversible and does not change the
-current production site. Move the production domain only after unstable has
-passed its owner checks and you have scheduled the production domain cutover.
+OpenTofu first creates `unstable` and `*.unstable` A records in the existing
+`life2launch.app` zone. The ordinary `*` record covers one label only and does
+not cover organization hosts beneath `unstable`.
 
-1. In DigitalOcean, open **Networking → Domains** and add both apex domains.
-   Create these records in each zone:
+1. Review the planned records:
 
    | Type | Hostname | Value |
    | --- | --- | --- |
-   | `A` | `@` | That environment's droplet IPv4 |
-   | `A` | `*` | That environment's droplet IPv4 |
-   | `A` | `www` | Optional; the wildcard already covers it |
+   | `A` | `unstable` in `life2launch.app` | Unstable droplet IPv4 |
+   | `A` | `*.unstable` in `life2launch.app` | Unstable droplet IPv4 |
+   | `A` | `@` in `life2launch.dev` | Operations IPv4, only after cutover approval |
 
    Add AAAA records only when the matching droplet and firewall actually support
-   IPv6. The wildcard is required for organization hosts such as
-   `life2launch.life2launch.dev`; an apex record alone is insufficient.
+   IPv6. The nested wildcard is required for organization hosts such as
+   `life2launch.unstable.life2launch.app`; the `unstable` record alone is
+   insufficient.
 2. Before delegating an actively used domain, copy every record it needs into
    DigitalOcean: MX, SPF/DKIM/DMARC TXT records, verification TXT records, CAA,
    and intentional subdomains. Create new provider-issued records when moving
@@ -251,9 +253,10 @@ passed its owner checks and you have scheduled the production domain cutover.
    until the DNS token can edit these DigitalOcean zones.
    If `dig` is unavailable on Ubuntu, install `dnsutils`, or use
    `getent ahostsv4 DOMAIN` for a basic address check.
-5. Initialize unstable against `UNSTABLE_DOMAIN`, complete the login/org/file/
-   search/collaboration checks, and rehearse one refresh. Its separate domain
-   prevents production cookies from being sent to the test environment.
+5. Initialize unstable from the topology, complete the login/org/file/search/
+   collaboration checks, and rehearse one refresh. Both hosted environments must
+   run the repository-enforced host-only cookie mode before nested traffic is
+   accepted.
 6. To move the existing production deployment to `PROD_DOMAIN` while retaining
    its current image, disable the production GitHub environment, take a snapshot,
    and follow **Migrate the existing production droplet** below. Change only the

@@ -25,7 +25,10 @@ with tarfile.open(snapshot/'content.tar.gz') as archive:
         assert member.isfile() or member.isdir(), 'Snapshot archive must contain only regular files/directories'
 env = read_env(Path('.env'))
 source, target = meta['source_domain'], env['LAUNCHLMS_DOMAIN']
-assert source != target and not target.endswith('.'+source) and not source.endswith('.'+target), 'Separate domains required'
+assert source != target, 'Production and unstable domains must differ'
+if target.endswith('.'+source) or source.endswith('.'+target):
+    assert env.get('LAUNCHLMS_COOKIE_SCOPE') == 'host-only', 'Nested environments require host-only cookies'
+    assert env.get('NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE') == 'host-only', 'Web runtime must use host-only cookies'
 assert hashlib.sha256(env['LAUNCHLMS_AUTH_JWT_SECRET_KEY'].encode()).hexdigest() != meta['jwt_fingerprint'], 'Production JWT key must not be reused'
 url = urlsplit(env['LAUNCHLMS_SQL_CONNECTION_STRING'])
 assert url.hostname == 'db'

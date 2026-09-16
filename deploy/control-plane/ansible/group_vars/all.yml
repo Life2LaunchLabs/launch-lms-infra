@@ -1,0 +1,7 @@
+operations_hostname: launch-operations-1
+operations_user: launchops
+operations_repository: https://github.com/Life2LaunchLabs/launch-lms-infra.git
+operations_revision: main
+operations_checkout: /opt/launch-operations
+operations_swap_megabytes: 4096
+operations_admin_public_key: ""
