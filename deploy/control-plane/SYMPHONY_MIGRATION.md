@@ -9,11 +9,16 @@ deployment checks. Do not combine this operation with an application release.
 1. On the current host, run `python3 scripts/symphony-state.py inspect` and save
    the output in the private change record. It contains image/resource/exit state,
    but no environment or secret values.
-2. Treat `oom_killed: true`, repeated restarts, or memory saturation in host
+2. Treat `oom_killed: true`, nonzero cgroup OOM counters, repeated restarts, or
+   memory saturation in host
    metrics as a failed gate. Capture the task, phase, peak RSS, host available
    memory, and relevant redacted logs. Resolve the workload or host capacity
    before migration; do not raise concurrency.
-3. Verify no issue is in the middle of an owner-approved Merge operation. Record
+3. Provision at least 8 GiB RAM on the destination and set
+   `SYMPHONY_MEMORY_LIMIT=4g` in `/etc/launch-symphony/compose.env`. This sizing
+   follows the observed 1.9 GiB Next process plus roughly 850 MiB idle worker state
+   with operating headroom. Do not interpret swap as replacement capacity.
+4. Verify no issue is in the middle of an owner-approved Merge operation. Record
    active Jira issue keys, workspace names, PR heads, rendered workflow hash, and
    the control-plane database backup revision.
 
@@ -46,14 +51,25 @@ docker run --rm --network none --read-only \
   -v launch-symphony_symphony-home:/restore \
   -v /var/backups/launch-operations:/backup:ro \
   alpine:3.20 sh -c 'cd /restore && tar -xzf /backup/symphony-home-TIMESTAMP.tar.gz && chown -R 1000:1000 .'
-docker compose -f docker-compose.symphony.yml up -d --no-deps symphony
+docker compose --env-file /etc/launch-symphony/compose.env \
+  -f docker-compose.symphony.yml up -d --no-deps symphony
 ```
 
 The restored `PAUSED` marker must keep dispatch disabled. Confirm the authenticated
 control-plane can read the sanitized status endpoint, the rendered workflow metadata
 matches the source, every recorded workspace exists, Git remotes contain no embedded
 credentials, and unfinished work resumes from its existing branch/workpad. Validate
-one non-delivery synthetic handoff before removing `PAUSED` and restarting.
+one non-delivery synthetic handoff and the repository browser scenario before
+removing `PAUSED`. Then run:
+
+```bash
+python3 scripts/symphony-state.py preflight
+```
+
+The command must report `passed: true`: healthy worker, persistent volume, no OOM
+events, worker limit of at least 4 GiB, host memory of at least 8 GiB, and peak
+usage below 85% of the cgroup limit. A failed gate blocks dispatch; preserve its
+JSON output with the migration evidence.
 
 ## Resume and rollback
 

@@ -26,7 +26,7 @@ services:
     volumes:
       - symphony-home:/home/node
       - /etc/launch-symphony/openai-api-key:/run/secrets/openai-api-key:ro
-    mem_limit: 2300m
+    mem_limit: ${SYMPHONY_MEMORY_LIMIT:-2300m}
     cpus: 1.5
     pids_limit: 512
     security_opt: ["no-new-privileges:true"]

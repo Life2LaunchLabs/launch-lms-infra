@@ -11,6 +11,8 @@ On the dedicated operations host, provision /etc/launch-symphony (0700) containi
 - runner.env (0600): JIRA_BASE_URL, JIRA_EMAIL, JIRA_API_TOKEN,
   OPERATIONS_RUNNER_BROKER_KEY and OPERATIONS_PROJECT_ID. GitHub access is minted
   at startup by the control plane; do not store a long-lived GH_TOKEN.
+- compose.env (0600): `SYMPHONY_MEMORY_LIMIT=4g`. The dedicated host must have at
+  least 8 GiB RAM; the 2300 MiB Compose default exists only for the legacy host.
 - openai-api-key (0600, uid 1000): plain API key for the funded OpenAI API project.
 - ENABLED: explicit opt-in marker. Never enable this on production.
 
@@ -61,10 +63,13 @@ current agent; Git/workpad state remains for continuation. To disable all future
 starts, remove the host ENABLED marker AND run Compose stop. App deployments leave
 this separate project alone. Do not delete its volume during routine updates.
 
-The worker is limited to 2300 MiB, 1.5 CPU and 512 PIDs;
-large image/browser checks run in GitHub Actions. Inspect OOM state when a worker
-disappears. Expand server capacity before increasing concurrency.
-Use `python3 scripts/symphony-state.py inspect` for the redacted OOM/resource record.
+The legacy worker is limited to 2300 MiB; the dedicated host uses a 4 GiB worker
+limit. Both retain 1.5 CPU and 512 PIDs. Large image/browser checks run in GitHub
+Actions. The September 13 incident proved that a local Next server can exhaust the
+legacy cgroup; see `docs/operations/symphony-oom-2026-09-13.md`.
+Use `python3 scripts/symphony-state.py inspect` for the redacted resource record and
+`python3 scripts/symphony-state.py preflight` for the destination acceptance gate.
+Do not resume dispatch until preflight passes after the synthetic browser canary.
 Host transfer, verified snapshot/restore, continuation, and rollback are defined in
 `deploy/control-plane/SYMPHONY_MIGRATION.md`.
 
