@@ -189,6 +189,52 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(2, result.count('import launch_lms_proxy'))
             self.assertNotIn('__LAUNCHLMS_ROUTES__', result)
 
+    def test_legacy_unstable_host_only_exposes_nested_domain_tls_preflight(self):
+        password_hash = '$2a$14$' + 'a'*53
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            shutil.copy(ROOT/'Caddyfile', path/'Caddyfile')
+            (path/'.deployment-environment').write_text('unstable\n')
+            (path/'.env').write_text(
+                'LAUNCHLMS_DOMAIN=life2launch.dev\n'
+                'UNSTABLE_HTTP_USER=launch_testers\n'
+                f'UNSTABLE_HTTP_PASSWORD_HASH={password_hash}\n'
+            )
+            subprocess.run([sys.executable,str(ROOT/'scripts/render-caddy.py')],cwd=path,check=True)
+            result=(path/'Caddyfile.active').read_text()
+            preflight=result.split('unstable.life2launch.app, *.unstable.life2launch.app', 1)[1]
+            self.assertIn('@domain_preflight path /.well-known/launch-lms-domain-preflight', preflight)
+            self.assertIn('respond @domain_preflight 204', preflight)
+            self.assertIn('respond 404', preflight)
+            self.assertNotIn('import launch_lms_proxy', preflight)
+
+    def test_nested_domain_does_not_render_a_preflight_only_site_after_cutover(self):
+        password_hash = '$2a$14$' + 'a'*53
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            shutil.copy(ROOT/'Caddyfile', path/'Caddyfile')
+            (path/'.deployment-environment').write_text('unstable\n')
+            (path/'.env').write_text(
+                'LAUNCHLMS_DOMAIN=unstable.life2launch.app\n'
+                'UNSTABLE_HTTP_USER=launch_testers\n'
+                f'UNSTABLE_HTTP_PASSWORD_HASH={password_hash}\n'
+            )
+            subprocess.run([sys.executable,str(ROOT/'scripts/render-caddy.py')],cwd=path,check=True)
+            result=(path/'Caddyfile.active').read_text()
+            self.assertNotIn('@domain_preflight', result)
+
+    def test_domain_preflight_verifier_only_targets_rendered_preflight(self):
+        verifier=load('verify-domain-preflight')
+        with tempfile.TemporaryDirectory() as tmp:
+            active=Path(tmp)/'Caddyfile.active'
+            active.write_text('example.test { respond 404 }\n')
+            self.assertIsNone(verifier.configured_preflight_url(active))
+            active.write_text(verifier.MARKER+'\n')
+            self.assertEqual(
+                'https://unstable.life2launch.app/.well-known/launch-lms-domain-preflight',
+                verifier.configured_preflight_url(active),
+            )
+
     def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)
