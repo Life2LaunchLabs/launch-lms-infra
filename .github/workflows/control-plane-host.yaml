@@ -68,6 +68,11 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_VERSIONING_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_VERSIONING_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: us-east-1
+      # Spaces is S3-compatible but does not implement every optional AWS
+      # checksum response header. Keep integrity checks when the API requires
+      # them while avoiding AWS CLI's third-party endpoint parser failure.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       STATE_BUCKET: ${{ vars.OPERATIONS_STATE_BUCKET }}
     steps:
       - name: Enable and verify private state-bucket versioning
@@ -97,6 +102,8 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: https://sfo3.digitaloceanspaces.com
       AWS_DEFAULT_REGION: us-east-1
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       TF_VAR_ssh_key_names: ${{ vars.OPERATIONS_SSH_KEY_NAMES_JSON }}
       TF_VAR_ssh_source_cidrs: ${{ vars.OPERATIONS_SSH_SOURCE_CIDRS_JSON }}
     defaults:
