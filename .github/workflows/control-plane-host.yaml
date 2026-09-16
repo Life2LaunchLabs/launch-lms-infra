@@ -5,6 +5,7 @@ on:
     paths:
       - deploy/control-plane/ansible/**
       - deploy/control-plane/iac/**
+      - deploy/control-plane/state-bootstrap/**
       - deploy/environments/**
       - scripts/environment_topology.py
       - .github/workflows/control-plane-host.yaml
@@ -47,11 +48,12 @@ jobs:
         run: |
           python -m pip install 'ansible-core>=2.19,<2.20' 'ansible-lint>=25,<26'
       - name: Validate OpenTofu
-        working-directory: deploy/control-plane/iac
         run: |
-          tofu fmt -check -recursive
-          tofu init -backend=false
-          tofu validate
+          tofu fmt -check -recursive deploy/control-plane
+          tofu -chdir=deploy/control-plane/iac init -backend=false
+          tofu -chdir=deploy/control-plane/iac validate
+          tofu -chdir=deploy/control-plane/state-bootstrap init -backend=false
+          tofu -chdir=deploy/control-plane/state-bootstrap validate
       - name: Validate Ansible
         working-directory: deploy/control-plane/ansible
         run: |
@@ -65,30 +67,26 @@ jobs:
     runs-on: ubuntu-latest
     environment: operations
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_VERSIONING_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_VERSIONING_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: us-east-1
-      # Spaces is S3-compatible but does not implement every optional AWS
-      # checksum response header. Keep integrity checks when the API requires
-      # them while avoiding AWS CLI's third-party endpoint parser failure.
-      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      SPACES_ACCESS_KEY_ID: ${{ secrets.SPACES_VERSIONING_ACCESS_KEY_ID }}
+      SPACES_SECRET_ACCESS_KEY: ${{ secrets.SPACES_VERSIONING_SECRET_ACCESS_KEY }}
       STATE_BUCKET: ${{ vars.OPERATIONS_STATE_BUCKET }}
     steps:
+      - uses: actions/checkout@v6
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.10.6
       - name: Enable and verify private state-bucket versioning
+        working-directory: deploy/control-plane/state-bootstrap
         run: |
           test -n "$STATE_BUCKET"
-          test -n "$AWS_ACCESS_KEY_ID"
-          test -n "$AWS_SECRET_ACCESS_KEY"
-          aws s3api put-bucket-versioning \
-            --bucket "$STATE_BUCKET" \
-            --versioning-configuration Status=Enabled \
-            --endpoint-url https://sfo3.digitaloceanspaces.com
-          status=$(aws s3api get-bucket-versioning \
-            --bucket "$STATE_BUCKET" \
-            --query Status --output text \
-            --endpoint-url https://sfo3.digitaloceanspaces.com)
-          test "$status" = Enabled
+          test -n "$SPACES_ACCESS_KEY_ID"
+          test -n "$SPACES_SECRET_ACCESS_KEY"
+          tofu init
+          tofu import -var="bucket_name=$STATE_BUCKET" \
+            digitalocean_spaces_bucket.state "sfo3,$STATE_BUCKET"
+          tofu apply -auto-approve -var="bucket_name=$STATE_BUCKET"
+          tofu plan -detailed-exitcode -var="bucket_name=$STATE_BUCKET"
           echo 'Private state-bucket versioning is enabled.'
 
   cloud:
@@ -100,6 +98,8 @@ jobs:
       DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+      SPACES_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+      SPACES_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: https://sfo3.digitaloceanspaces.com
       AWS_DEFAULT_REGION: us-east-1
       AWS_REQUEST_CHECKSUM_CALCULATION: when_required
@@ -115,18 +115,15 @@ jobs:
         with:
           tofu_version: 1.10.6
       - name: Refuse unversioned state bucket
+        working-directory: deploy/control-plane/state-bootstrap
         env:
           STATE_BUCKET: ${{ vars.OPERATIONS_STATE_BUCKET }}
         run: |
           test -n "$STATE_BUCKET"
-          status=$(aws s3api get-bucket-versioning \
-            --bucket "$STATE_BUCKET" \
-            --query Status --output text \
-            --endpoint-url https://sfo3.digitaloceanspaces.com)
-          test "$status" = Enabled || {
-            echo 'State bucket versioning must be Enabled before plan/apply' >&2
-            exit 1
-          }
+          tofu init
+          tofu import -var="bucket_name=$STATE_BUCKET" \
+            digitalocean_spaces_bucket.state "sfo3,$STATE_BUCKET"
+          tofu plan -detailed-exitcode -var="bucket_name=$STATE_BUCKET"
       - name: Initialize locked remote state
         run: tofu init -backend-config="bucket=${{ vars.OPERATIONS_STATE_BUCKET }}"
       - name: Adopt the existing droplet
