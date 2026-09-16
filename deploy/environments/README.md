@@ -45,9 +45,13 @@ migration path. It requires an explicit target-domain confirmation, rewrites
 only the reviewed non-secret runtime keys, retains a mode-0600 pre-cutover
 environment snapshot, deploys under the shared unstable lock, and verifies
 public TLS, the tester access gate, apex and tenant routing, and the `.dev`
-redirect. Any apply or verification failure restores the snapshot and redeploys
-the former domain automatically. The same workflow exposes an explicit rollback
-action; do not edit the host `.env` manually.
+redirect. It then uses the private installation administrator only within the
+host process to verify a real source-host login, one-use target handoff, ticket
+replay rejection, legacy-cookie expiry, host isolation, and logout. Credentials
+and tokens are never printed or transferred to the Actions runner. Any apply or
+verification failure restores the snapshot and redeploys the former domain
+automatically. The same workflow exposes an explicit rollback action; do not
+edit the host `.env` manually.
 
 The `.dev` apex remains on the old unstable host while
 `dns.operations_apex_cutover` is false. The control-plane deployment script also

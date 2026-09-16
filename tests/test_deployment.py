@@ -267,6 +267,26 @@ class DeploymentTests(unittest.TestCase):
             migration.rollback()
             self.assertEqual(original, env.read_text())
 
+    def test_live_handoff_verifier_parses_post_form_and_tracks_host_only_cookies(self):
+        verifier=load('verify-live-session-handoff')
+        form=verifier.HandoffForm()
+        form.feed(
+            '<form method="post" action="https://unstable.example/api/auth/handoff/complete">'
+            '<input type="hidden" name="ticket" value="ticket-value">'
+            '<input type="hidden" name="state" value="state-value">'
+            '<input type="hidden" name="return_path" value="/account"></form>'
+        )
+        self.assertEqual('https://unstable.example/api/auth/handoff/complete', form.action)
+        self.assertEqual(
+            {'ticket': 'ticket-value', 'state': 'state-value', 'return_path': '/account'},
+            form.fields,
+        )
+        jar=verifier.CookieJar()
+        jar.set_cookie(verifier.cookie('access_token_cookie', 'source', 'org.unstable.example', host_only=True))
+        jar.set_cookie(verifier.cookie('refresh_token_cookie', 'target', 'unstable.example', host_only=True))
+        jar.set_cookie(verifier.cookie('launchlms_unstable_gate', 'gate', '.unstable.example'))
+        self.assertEqual({'org.unstable.example', 'unstable.example'}, verifier.auth_domains(jar))
+
     def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)
