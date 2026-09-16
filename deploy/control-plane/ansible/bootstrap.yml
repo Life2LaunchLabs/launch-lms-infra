@@ -53,12 +53,22 @@
         group: "{{ operations_user }}"
         mode: "0700"
 
-    - name: Install the operations administrator public key
-      ansible.builtin.copy:
-        dest: "/home/{{ operations_user }}/.ssh/authorized_keys"
-        content: "{{ operations_admin_public_key }}\n"
+    - name: Authorize the supplied key for application deployment
+      ansible.builtin.lineinfile:
+        path: "/home/{{ operations_user }}/.ssh/authorized_keys"
+        line: "{{ operations_admin_public_key }}"
+        create: true
         owner: "{{ operations_user }}"
         group: "{{ operations_user }}"
+        mode: "0600"
+
+    - name: Authorize the supplied key for repository host management
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ operations_admin_public_key }}"
+        create: true
+        owner: root
+        group: root
         mode: "0600"
 
     - name: Harden SSH authentication

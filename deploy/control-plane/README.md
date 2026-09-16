@@ -31,6 +31,8 @@ Configure the `operations` environment with:
   `OPERATIONS_SSH_KEY_NAMES_JSON`, and
   `OPERATIONS_SSH_SOURCE_CIDRS_JSON`.
 
+The SSH private key is a dedicated operations-Actions identity, not an operator's
+personal key. Its public half is installed idempotently alongside operator access.
 The SSH host-key secret is the complete pinned known-hosts line, not a keyscan
 performed during deployment. The initial manually-created droplet is adopted once
 by dispatching `apply` with droplet ID `601077988`; `prevent_destroy` blocks an
