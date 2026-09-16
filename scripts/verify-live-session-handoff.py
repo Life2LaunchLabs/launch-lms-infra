@@ -81,6 +81,18 @@ def validated_route_redirect(current_url: str, location: str, expected_host: str
     return destination
 
 
+def validated_completion_redirect(current_url: str, location: str,
+                                  expected_host: str) -> str:
+    destination = urljoin(current_url, location)
+    parsed = urlparse(destination)
+    if (parsed.scheme != 'https' or parsed.hostname != expected_host or
+            parsed.port not in (None, 443) or parsed.path != '/account' or
+            parsed.params or parsed.query or parsed.fragment or
+            parsed.username is not None or parsed.password is not None):
+        raise ValueError('Handoff completion did not redirect to the reviewed target path')
+    return destination
+
+
 def verify() -> None:
     env = read_env(ROOT / '.env')
     topology = load_topology(ROOT / 'deploy/environments/launch-lms.yaml')
@@ -153,14 +165,17 @@ def verify() -> None:
             '/api/auth/handoff/complete',
         )
         complete_status, complete_headers, _ = request(opener, form.action, data=form.fields)
-    account_url = urljoin(form.action, complete_headers.get('Location', ''))
-    if complete_status != 303 or account_url != f'https://{target}/account':
-        destination = urlparse(account_url)
+    raw_account_url = urljoin(form.action, complete_headers.get('Location', ''))
+    if complete_status != 303:
+        destination = urlparse(raw_account_url)
         raise ValueError(
             'Handoff completion did not redirect to the reviewed target path: '
             f'HTTP {complete_status}, destination {destination.hostname or "missing"}'
             f'{destination.path or "/"}'
         )
+    account_url = validated_completion_redirect(
+        form.action, complete_headers.get('Location', ''), target
+    )
     account_status, _, _ = request(opener, account_url)
     if account_status != 200:
         raise ValueError(f'Authenticated target account returned HTTP {account_status}')
