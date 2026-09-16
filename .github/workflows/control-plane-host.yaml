@@ -185,6 +185,10 @@ jobs:
           printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
           chmod 0600 "$HOME/.ssh/known_hosts"
           ssh-keygen -y -f "$RUNNER_TEMP/operations-key" > "$RUNNER_TEMP/operations-key.pub"
+      - name: Report SSH key algorithm and strength without exposing key material
+        run: >-
+          ssh-keygen -lf "$RUNNER_TEMP/operations-key.pub" |
+          awk '{print "Operations Actions SSH key: " $1 " bits " $NF}'
       - name: Configure the exact repository revision
         if: inputs.action == 'configure'
         working-directory: deploy/control-plane/ansible
