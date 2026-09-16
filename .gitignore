@@ -9,3 +9,9 @@ node_modules/
 dist/
 .venv/
 *.tsbuildinfo
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+backend.hcl
+control-plane.auto.tfvars

@@ -5,6 +5,40 @@ with an operations-only domain, encrypted provider backups, and a firewall allow
 80/443 publicly and SSH only from operator/Actions addresses. PostgreSQL, the API,
 and the Symphony status network are never publicly published.
 
+## Repository-managed host
+
+Cloud resources live under `deploy/control-plane/iac`; host configuration lives
+under `deploy/control-plane/ansible`. Do not bootstrap the server with an ad-hoc
+shell session. The protected `Control-plane host` workflow validates both on pull
+requests and exposes four explicit operations: `plan`, `apply`, `configure`, and
+`verify`. Cloud and host mutations require approval through the `operations`
+GitHub Environment.
+
+The accepted initial host is `launch-operations-1` in SFO3: Ubuntu 24.04 x86_64,
+8 GiB RAM, four vCPUs, provider backups and monitoring. OpenTofu manages the
+Droplet, project, and Cloud Firewall. Ansible manages packages, SSH hardening,
+UFW, fail2ban, unattended upgrades, bounded Docker logs, 4 GiB emergency swap,
+protected directories, and an exact-revision checkout. It does not create secrets
+or start the control plane or Symphony.
+
+OpenTofu uses a private versioned DigitalOcean Spaces bucket with S3 lock files.
+Configure the `operations` environment with:
+
+- secrets `DIGITALOCEAN_TOKEN`, `SPACES_ACCESS_KEY_ID`,
+  `SPACES_SECRET_ACCESS_KEY`, `OPERATIONS_SSH_PRIVATE_KEY`, and
+  `OPERATIONS_SSH_HOST_KEY`;
+- variables `OPERATIONS_STATE_BUCKET`,
+  `OPERATIONS_SSH_KEY_FINGERPRINTS_JSON`, and
+  `OPERATIONS_SSH_SOURCE_CIDRS_JSON`.
+
+The SSH host-key secret is the complete pinned known-hosts line, not a keyscan
+performed during deployment. The initial manually-created droplet is adopted once
+by dispatching `apply` with droplet ID `601077988`; `prevent_destroy` blocks an
+accidental replacement. Review the plan before approving apply. Thereafter the
+same workflow owns drift correction. DigitalOcean does not permit changing a
+Droplet's creation-time SSH keys in place, so an SSH-key mismatch must never be
+accepted as an unreviewed replacement.
+
 ## Required host configuration
 
 Create `/etc/launch-operations` mode `0700` with:

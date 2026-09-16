@@ -1,0 +1,126 @@
+name: Control-plane host
+
+on:
+  pull_request:
+    paths:
+      - deploy/control-plane/ansible/**
+      - deploy/control-plane/iac/**
+      - .github/workflows/control-plane-host.yaml
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Review or apply cloud/host state
+        type: choice
+        options: [plan, apply, configure, verify]
+        default: plan
+        required: true
+      adopt_droplet_id:
+        description: Existing droplet ID to import before the first apply
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-plane-host
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.10.6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install host automation dependencies
+        run: |
+          python -m pip install 'ansible-core>=2.19,<2.20' 'ansible-lint>=25,<26'
+      - name: Validate OpenTofu
+        working-directory: deploy/control-plane/iac
+        run: |
+          tofu fmt -check -recursive
+          tofu init -backend=false
+          tofu validate
+      - name: Validate Ansible
+        working-directory: deploy/control-plane/ansible
+        run: |
+          ansible-playbook --syntax-check bootstrap.yml
+          ansible-playbook --syntax-check verify.yml
+          ansible-lint bootstrap.yml verify.yml
+
+  cloud:
+    if: github.event_name == 'workflow_dispatch' && (inputs.action == 'plan' || inputs.action == 'apply')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: operations
+    env:
+      DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
+      AWS_ENDPOINT_URL_S3: https://sfo3.digitaloceanspaces.com
+      TF_VAR_ssh_key_fingerprints: ${{ vars.OPERATIONS_SSH_KEY_FINGERPRINTS_JSON }}
+      TF_VAR_ssh_source_cidrs: ${{ vars.OPERATIONS_SSH_SOURCE_CIDRS_JSON }}
+    defaults:
+      run:
+        working-directory: deploy/control-plane/iac
+    steps:
+      - uses: actions/checkout@v6
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.10.6
+      - name: Initialize locked remote state
+        run: tofu init -backend-config="bucket=${{ vars.OPERATIONS_STATE_BUCKET }}"
+      - name: Adopt the existing droplet
+        if: inputs.action == 'apply' && inputs.adopt_droplet_id != ''
+        env:
+          ADOPT_DROPLET_ID: ${{ inputs.adopt_droplet_id }}
+        run: |
+          if ! tofu state show digitalocean_droplet.operations >/dev/null 2>&1; then
+            tofu import digitalocean_droplet.operations "$ADOPT_DROPLET_ID"
+          fi
+      - name: Produce the reviewed plan
+        run: tofu plan -lock-timeout=5m -out=control-plane.tfplan
+      - name: Apply the reviewed plan
+        if: inputs.action == 'apply'
+        run: tofu apply -lock-timeout=5m control-plane.tfplan
+
+  host:
+    if: github.event_name == 'workflow_dispatch' && (inputs.action == 'configure' || inputs.action == 'verify')
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install host automation dependencies
+        run: |
+          python -m pip install 'ansible-core>=2.19,<2.20'
+      - name: Install the environment-protected SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+          ssh-keygen -y -f "$RUNNER_TEMP/operations-key" > "$RUNNER_TEMP/operations-key.pub"
+      - name: Configure the exact repository revision
+        if: inputs.action == 'configure'
+        working-directory: deploy/control-plane/ansible
+        run: >-
+          ansible-playbook bootstrap.yml
+          --private-key "$RUNNER_TEMP/operations-key"
+          --extra-vars "operations_revision=${{ github.sha }}"
+          --extra-vars "operations_admin_public_key=$(cat "$RUNNER_TEMP/operations-key.pub")"
+      - name: Verify the managed host contract
+        working-directory: deploy/control-plane/ansible
+        run: ansible-playbook verify.yml --private-key "$RUNNER_TEMP/operations-key"

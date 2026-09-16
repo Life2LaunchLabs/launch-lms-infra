@@ -1,0 +1,251 @@
+---
+- name: Configure the dedicated operations host
+  hosts: operations
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Require the accepted host capacity and architecture
+      ansible.builtin.assert:
+        that:
+          - ansible_architecture == "x86_64"
+          - ansible_memtotal_mb >= 7800
+          - ansible_distribution == "Ubuntu"
+          - ansible_distribution_version is version("24.04", ">=")
+          - operations_admin_public_key.startswith("ssh-ed25519 ")
+        fail_msg: Host sizing, operating system, or administrative public key is outside the operations contract.
+
+  tasks:
+    - name: Set the stable operations hostname
+      ansible.builtin.hostname:
+        name: "{{ operations_hostname }}"
+
+    - name: Install host runtime and security packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - docker.io
+          - docker-compose-v2
+          - fail2ban
+          - git
+          - python3
+          - rsync
+          - ufw
+          - unattended-upgrades
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the unprivileged operations deployment account
+      ansible.builtin.user:
+        name: "{{ operations_user }}"
+        groups: docker
+        append: true
+        create_home: true
+        shell: /bin/bash
+
+    - name: Create the operations SSH directory
+      ansible.builtin.file:
+        path: "/home/{{ operations_user }}/.ssh"
+        state: directory
+        owner: "{{ operations_user }}"
+        group: "{{ operations_user }}"
+        mode: "0700"
+
+    - name: Install the operations administrator public key
+      ansible.builtin.copy:
+        dest: "/home/{{ operations_user }}/.ssh/authorized_keys"
+        content: "{{ operations_admin_public_key }}\n"
+        owner: "{{ operations_user }}"
+        group: "{{ operations_user }}"
+        mode: "0600"
+
+    - name: Harden SSH authentication
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/99-launch-operations.conf
+        content: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          PermitRootLogin prohibit-password
+          X11Forwarding no
+          AllowTcpForwarding yes
+        owner: root
+        group: root
+        mode: "0644"
+        validate: /usr/sbin/sshd -t -f %s
+      notify: Restart SSH
+
+    - name: Apply bounded Docker daemon logging
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "live-restore": true,
+            "log-driver": "json-file",
+            "log-opts": {"max-size": "10m", "max-file": "3"}
+          }
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Docker
+
+    - name: Enable Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Create the emergency swap file
+      ansible.builtin.command:
+        cmd: "fallocate -l {{ operations_swap_megabytes }}M /swapfile"
+        creates: /swapfile
+      register: swap_created
+
+    - name: Protect the emergency swap file
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Format a newly-created swap file  # noqa no-handler
+      ansible.builtin.command: mkswap /swapfile
+      when: swap_created.changed
+      changed_when: true
+
+    - name: Persist the emergency swap file
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: /swapfile none swap sw 0 0
+        state: present
+
+    - name: Enable emergency swap
+      ansible.builtin.command: swapon /swapfile
+      when: ansible_swaptotal_mb < 1
+      changed_when: true
+
+    - name: Keep swap as an emergency buffer rather than working capacity
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/99-launch-operations.conf
+        content: |
+          vm.swappiness=10
+          vm.vfs_cache_pressure=50
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload sysctl
+
+    - name: Create protected operations directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {path: /etc/launch-operations, owner: root, group: root, mode: "0700"}
+        - {path: /etc/launch-symphony, owner: root, group: root, mode: "0700"}
+        - {path: /var/backups/launch-operations, owner: root, group: root, mode: "0700"}
+        - {path: "{{ operations_checkout }}", owner: "{{ operations_user }}", group: "{{ operations_user }}", mode: "0750"}
+
+    - name: Check out the exact repository revision
+      become: true
+      become_user: "{{ operations_user }}"
+      ansible.builtin.git:
+        repo: "{{ operations_repository }}"
+        dest: "{{ operations_checkout }}"
+        version: "{{ operations_revision }}"
+        update: true
+        force: false
+
+    - name: Record the repository-managed host contract
+      ansible.builtin.copy:
+        dest: /etc/launch-operations/managed-host.json
+        content: |
+          {
+            "schema_version": 1,
+            "repository": "{{ operations_repository }}",
+            "revision": "{{ operations_revision }}",
+            "playbook": "deploy/control-plane/ansible/bootstrap.yml"
+          }
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Set firewall defaults
+      ansible.builtin.command: "ufw default {{ item.policy }} {{ item.direction }}"
+      loop:
+        - {direction: incoming, policy: deny}
+        - {direction: outgoing, policy: allow}
+      changed_when: false
+
+    - name: Allow repository-managed public ports
+      ansible.builtin.command: "ufw allow {{ item }}/tcp comment repository-managed"
+      loop: ["22", "80", "443"]
+      register: ufw_tcp
+      changed_when: "'Skipping adding existing rule' not in ufw_tcp.stdout"
+
+    - name: Allow HTTP/3
+      ansible.builtin.command: ufw allow 443/udp comment repository-managed
+      register: ufw_udp
+      changed_when: "'Skipping adding existing rule' not in ufw_udp.stdout"
+
+    - name: Enable the host firewall
+      ansible.builtin.command: ufw --force enable
+      register: ufw_enable
+      changed_when: "'already enabled' not in ufw_enable.stdout"
+
+    - name: Configure the SSH intrusion jail
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/launch-operations.conf
+        content: |
+          [sshd]
+          enabled = true
+          backend = systemd
+          maxretry = 5
+          findtime = 10m
+          bantime = 1h
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart fail2ban
+
+    - name: Configure automatic security updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Enable unattended security upgrades and fail2ban
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - unattended-upgrades
+        - fail2ban
+
+  handlers:
+    - name: Restart SSH
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: restarted
+
+    - name: Restart Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        state: restarted
+
+    - name: Reload sysctl
+      ansible.builtin.command: sysctl --system
+      changed_when: false
+
+    - name: Restart fail2ban
+      ansible.builtin.systemd_service:
+        name: fail2ban
+        state: restarted
