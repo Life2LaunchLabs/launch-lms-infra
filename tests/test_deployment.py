@@ -309,6 +309,26 @@ class DeploymentTests(unittest.TestCase):
                 '/api/auth/handoff/complete',
             ),
         )
+        self.assertEqual(
+            'https://unstable.example:443/account',
+            verifier.validated_completion_redirect(
+                'https://unstable.example/api/auth/handoff/complete/',
+                'https://unstable.example:443/account',
+                'unstable.example',
+            ),
+        )
+        for unsafe in (
+            'https://other.example/account',
+            'https://unstable.example:444/account',
+            'https://unstable.example/account?ticket=secret',
+            'https://unstable.example/account#fragment',
+        ):
+            with self.subTest(unsafe=unsafe), self.assertRaisesRegex(ValueError, 'reviewed target'):
+                verifier.validated_completion_redirect(
+                    'https://unstable.example/api/auth/handoff/complete/',
+                    unsafe,
+                    'unstable.example',
+                )
 
     def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:
