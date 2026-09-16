@@ -1,4 +1,28 @@
-# Launch LMS deployments
+# Launch operations platform and deployments
+
+This repository is evolving in place into the reusable operations control plane.
+Application/product truth stays in each managed product repository; this repository
+owns deployment execution, environment locks, Symphony runtime, feedback operations,
+the injected operations surface, and operator dashboards.
+
+## Platform map
+
+| Area | Path | Responsibility |
+| --- | --- | --- |
+| Operator control plane | `apps/control-plane` | GitHub-authenticated API and React/Vite dashboard |
+| Symphony orchestration | `services/orchestrator` | project manifest, exact-commit workflow rendering, run policy |
+| Feedback operations | `services/feedback` | durable Jira-backed submission/retry coordination |
+| Deployment observation | `services/deployer` | candidate validation, workflow dispatch/observation, environment locks |
+| External connectors | `packages/connectors` | least-privilege tracker and GitHub capability boundaries |
+| Project registration | `projects/launch-lms` | versioned non-secret repository/tracker/environment/embed contract |
+| Control-plane hosting | `deploy/control-plane` | independent Compose, PostgreSQL, TLS, backup/restore runbook |
+| Application hosting | root compatibility files, `deploy/environments` | current hosted environment state and transition path |
+
+The existing root deployment files and `symphony/` image remain compatibility
+entry points during migration. New behavior is implemented behind the manifest
+boundaries above; remove compatibility paths only after live recovery parity.
+
+## Existing application environments
 
 Two independent installations use this repository's `main` branch:
 

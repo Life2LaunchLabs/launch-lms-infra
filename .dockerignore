@@ -1,0 +1,10 @@
+.git
+.github
+.env
+.venv
+**/.venv
+**/node_modules
+**/dist
+**/__pycache__
+.deploy-state
+Caddyfile.active

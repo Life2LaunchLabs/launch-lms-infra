@@ -5,3 +5,7 @@ Caddyfile.active
 .deploy-state/
 .deploy.lock
 __pycache__/
+node_modules/
+dist/
+.venv/
+*.tsbuildinfo
