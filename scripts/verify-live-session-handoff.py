@@ -155,7 +155,12 @@ def verify() -> None:
         complete_status, complete_headers, _ = request(opener, form.action, data=form.fields)
     account_url = urljoin(form.action, complete_headers.get('Location', ''))
     if complete_status != 303 or account_url != f'https://{target}/account':
-        raise ValueError('Handoff completion did not redirect to the reviewed target path')
+        destination = urlparse(account_url)
+        raise ValueError(
+            'Handoff completion did not redirect to the reviewed target path: '
+            f'HTTP {complete_status}, destination {destination.hostname or "missing"}'
+            f'{destination.path or "/"}'
+        )
     account_status, _, _ = request(opener, account_url)
     if account_status != 200:
         raise ValueError(f'Authenticated target account returned HTTP {account_status}')
