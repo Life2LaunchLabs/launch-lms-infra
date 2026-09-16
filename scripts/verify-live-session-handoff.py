@@ -46,11 +46,18 @@ def cookie(name: str, value: str, domain: str, *, host_only: bool = False) -> Co
     )
 
 
-def request(opener, url: str, *, data: dict[str, str] | None = None) -> tuple[int, dict, bytes]:
-    encoded = urlencode(data).encode() if data is not None else None
+def request(opener, url: str, *, data: dict[str, str] | None = None,
+            json_data: dict | None = None) -> tuple[int, dict, bytes]:
+    if data is not None and json_data is not None:
+        raise ValueError('Choose form data or JSON, not both')
+    encoded = urlencode(data).encode() if data is not None else (
+        json.dumps(json_data).encode() if json_data is not None else None
+    )
     headers = {'User-Agent': 'launch-lms-live-handoff-verifier/1'}
-    if encoded is not None:
+    if data is not None:
         headers['Content-Type'] = 'application/x-www-form-urlencoded'
+    elif json_data is not None:
+        headers['Content-Type'] = 'application/json'
     web_request = Request(url, data=encoded, headers=headers, method='POST' if encoded is not None else 'GET')
     try:
         with opener.open(web_request, timeout=20) as response:
@@ -70,10 +77,11 @@ def verify() -> None:
     source = f"life2launch.{target}"
     if env.get('LAUNCHLMS_DOMAIN') != target or env.get('LAUNCHLMS_COOKIE_SCOPE') != 'host-only':
         raise ValueError('Live handoff requires the reviewed nested host-only runtime')
-    email = env.get('LAUNCHLMS_INITIAL_ADMIN_EMAIL', '')
-    password = env.get('LAUNCHLMS_INITIAL_ADMIN_PASSWORD', '')
+    jwt_secret = env.get('LAUNCHLMS_AUTH_JWT_SECRET_KEY', '')
+    email = 'acceptance-session-handoff@invalid.example'
+    password = sha256(f'live-handoff\0{jwt_secret}'.encode()).hexdigest() + 'A1!'
     password_hash = env.get('UNSTABLE_HTTP_PASSWORD_HASH', '')
-    if not email or not password or not password_hash:
+    if len(jwt_secret) < 32 or not password_hash:
         raise ValueError('Live handoff acceptance credentials are unavailable')
 
     jar = CookieJar()
@@ -81,6 +89,19 @@ def verify() -> None:
     jar.set_cookie(cookie('launchlms_unstable_gate', gate, f'.{target}'))
     jar.set_cookie(cookie('launchlms_current_orgslug', 'legacy', '.life2launch.app'))
     opener = build_opener(NoRedirect(), HTTPCookieProcessor(jar))
+
+    signup_status, _, signup_body = request(
+        opener, f'https://{source}/api/auth/signup/welcome',
+        json_data={'email': email, 'password': password, 'quiz_result': None},
+    )
+    if signup_status == 200:
+        if not json.loads(signup_body).get('user'):
+            raise ValueError('Synthetic acceptance account response omitted the user')
+        signup_logout, _, _ = request(opener, f'https://{source}/api/auth/logout', data={})
+        if signup_logout != 200:
+            raise ValueError('Could not clear the synthetic signup session before login acceptance')
+    elif signup_status != 409:
+        raise ValueError(f'Synthetic acceptance account preparation returned HTTP {signup_status}')
 
     login_status, _, login_body = request(
         opener, f'https://{source}/api/auth/login', data={'username': email, 'password': password}
