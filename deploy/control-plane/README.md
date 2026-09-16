@@ -28,7 +28,7 @@ Configure the `operations` environment with:
   `SPACES_SECRET_ACCESS_KEY`, `OPERATIONS_SSH_PRIVATE_KEY`, and
   `OPERATIONS_SSH_HOST_KEY`;
 - variables `OPERATIONS_STATE_BUCKET`,
-  `OPERATIONS_SSH_KEY_FINGERPRINTS_JSON`, and
+  `OPERATIONS_SSH_KEY_NAMES_JSON`, and
   `OPERATIONS_SSH_SOURCE_CIDRS_JSON`.
 
 The SSH host-key secret is the complete pinned known-hosts line, not a keyscan

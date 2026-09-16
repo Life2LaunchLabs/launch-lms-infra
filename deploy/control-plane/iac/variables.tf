@@ -22,12 +22,13 @@ variable "image" {
   default     = "ubuntu-24-04-x64"
 }
 
-variable "ssh_key_fingerprints" {
-  description = "DigitalOcean SSH-key fingerprints installed only when creating a replacement host."
+variable "ssh_key_names" {
+  description = "DigitalOcean account SSH-key names installed only when creating a replacement host."
   type        = list(string)
+  default     = ["henry-l2l-desktop-wsl"]
 
   validation {
-    condition     = length(var.ssh_key_fingerprints) > 0
+    condition     = length(var.ssh_key_names) > 0
     error_message = "At least one administrative SSH key is required."
   }
 }

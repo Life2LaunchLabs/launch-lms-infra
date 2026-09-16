@@ -1,2 +1,2 @@
-ssh_key_fingerprints = ["SHA256:REPLACE_WITH_DIGITALOCEAN_KEY_FINGERPRINT"]
-ssh_source_cidrs     = ["203.0.113.10/32"]
+ssh_key_names    = ["henry-l2l-desktop-wsl"]
+ssh_source_cidrs = ["203.0.113.10/32"]

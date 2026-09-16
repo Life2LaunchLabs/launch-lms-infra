@@ -63,7 +63,7 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.SPACES_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.SPACES_SECRET_ACCESS_KEY }}
       AWS_ENDPOINT_URL_S3: https://sfo3.digitaloceanspaces.com
-      TF_VAR_ssh_key_fingerprints: ${{ vars.OPERATIONS_SSH_KEY_FINGERPRINTS_JSON }}
+      TF_VAR_ssh_key_names: ${{ vars.OPERATIONS_SSH_KEY_NAMES_JSON }}
       TF_VAR_ssh_source_cidrs: ${{ vars.OPERATIONS_SSH_SOURCE_CIDRS_JSON }}
     defaults:
       run:

@@ -2,12 +2,17 @@ locals {
   tags = ["launch-operations", "control-plane"]
 }
 
+data "digitalocean_ssh_key" "operations" {
+  for_each = toset(var.ssh_key_names)
+  name     = each.value
+}
+
 resource "digitalocean_droplet" "operations" {
   name       = var.name
   image      = var.image
   region     = var.region
   size       = var.size
-  ssh_keys   = var.ssh_key_fingerprints
+  ssh_keys   = [for key in data.digitalocean_ssh_key.operations : key.id]
   backups    = true
   monitoring = true
   ipv6       = true
