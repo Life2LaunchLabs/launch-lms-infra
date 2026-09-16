@@ -44,6 +44,7 @@ class ManifestTests(unittest.TestCase):
         self.assertFalse(manifest.data["environments"]["production"]["embed_enabled"])
         self.assertEqual(manifest.data["tracker"]["statuses"]["approved"], "Merge")
         self.assertEqual(manifest.data["deployment"]["repository"], "Life2LaunchLabs/launch-lms-infra")
+        self.assertEqual(manifest.data["source"]["policy_paths"]["design"], "docs/design/README.md")
 
     def test_manifest_rejects_missing_lifecycle(self):
         data = load_project("launch-lms").data.copy()
@@ -87,6 +88,21 @@ class CandidateTests(unittest.TestCase):
 
 
 class ConnectorTests(unittest.TestCase):
+    def test_github_text_file_accepts_wrapped_base64_from_contents_api(self):
+        from packages.connectors.github import GitHubConnector
+
+        async def handler(request):
+            self.assertEqual(request.url.params["ref"], "a" * 40)
+            return httpx.Response(200, json={
+                "type": "file", "encoding": "base64", "sha": "b" * 40,
+                "content": "aGVsbG8g\nd29ybGQ=\n",
+            })
+
+        connector = GitHubConnector("secret", api_url="https://github.test", transport=httpx.MockTransport(handler))
+        content, blob = asyncio.run(connector.text_file("owner/repo", "docs/product/map/01-test.json", "a" * 40))
+        self.assertEqual(content, "hello world")
+        self.assertEqual(blob, "b" * 40)
+
     def test_jira_adapter_brokers_issue_properties_without_secret_repr(self):
         from packages.connectors.jira import JiraAdapter, JiraCredentials
         requests = []
@@ -149,6 +165,73 @@ class ConnectorTests(unittest.TestCase):
 
         self.assertEqual(asyncio.run(exercise())["conclusion"], "success")
         self.assertEqual(len(seen), 3)
+
+
+class RepositoryPlanningTests(unittest.TestCase):
+    def service(self):
+        from services.planning.repository import RepositoryPlanning
+        manifest = {
+            "schema_version": 1, "source": "productOS/product.db", "source_exported_at": "2026-09-16T00:00:00Z",
+            "expected_counts": {"groups": 1, "goals": 1, "activities": 1, "steps": 1},
+        }
+        group = {"id": "DISCOVERY", "title": "Discover", "intent": "Find things", "goals": [{
+            "id": "DISCOVERY-G001", "title": "Find", "outcome": "Found", "activities": [{
+                "id": "DISCOVERY-G001-A001", "title": "Search", "steps": [{
+                    "id": "DISCOVERY-G001-A001-S001", "title": "Query",
+                }],
+            }],
+        }]}
+
+        class Connector:
+            def __init__(self):
+                self.calls = []
+            async def branch_head(self, repository, branch):
+                return "a" * 40
+            async def contents(self, repository, path, ref):
+                return [{"type": "file", "name": "01-discovery.json", "path": "docs/product/map/01-discovery.json"}]
+            async def text_file(self, repository, path, ref):
+                if path.endswith("manifest.json"):
+                    return json.dumps(manifest), "c" * 40
+                if path.endswith("README.md"):
+                    return "# Design index\n", "d" * 40
+                return json.dumps(group), "b" * 40
+            async def create_branch(self, repository, branch, source_sha):
+                self.calls.append(("branch", branch, source_sha))
+            async def update_file(self, repository, path, branch, content, blob_sha, message):
+                self.calls.append(("update", path, branch, blob_sha))
+                return {"commit": {"sha": "e" * 40}}
+            async def create_pull_request(self, repository, title, body, head, base):
+                self.calls.append(("pr", head, base))
+                return {"number": 75, "html_url": "https://github.test/pull/75"}
+
+        connector = Connector()
+        return RepositoryPlanning(connector, load_project("launch-lms")), connector, group
+
+    def test_catalog_is_bound_to_one_revision_and_reports_hierarchy(self):
+        service, _, _ = self.service()
+        catalog = asyncio.run(service.catalog())
+        self.assertEqual(catalog["source_revision"], "a" * 40)
+        self.assertEqual(catalog["groups"][0]["step_count"], 1)
+        self.assertEqual(catalog["migration"]["expected_counts"]["activities"], 1)
+
+    def test_edit_creates_new_branch_and_pull_request(self):
+        service, connector, group = self.service()
+        result = asyncio.run(service.propose_edit(
+            path="docs/product/map/01-discovery.json", content=json.dumps(group),
+            expected_blob_sha="b" * 40, base_sha="a" * 40, title="Clarify discovery goal",
+            reason="Make the durable outcome clearer.",
+        ))
+        self.assertEqual(result["pull_request"]["number"], 75)
+        self.assertEqual([call[0] for call in connector.calls], ["branch", "update", "pr"])
+        self.assertEqual(connector.calls[-1][2], "dev")
+
+    def test_edit_rejects_out_of_contract_path_and_duplicate_ids(self):
+        service, _, group = self.service()
+        with self.assertRaisesRegex(ValueError, "outside"):
+            service.validate_edit("README.md", "changed")
+        group["goals"][0]["id"] = "DISCOVERY"
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            service.validate_edit("docs/product/map/01-discovery.json", json.dumps(group))
 
 
 class FeedbackSyncTests(unittest.TestCase):

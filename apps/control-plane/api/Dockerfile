@@ -3,8 +3,8 @@ WORKDIR /opt/launch-operations
 COPY apps/control-plane/api/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY services services
-COPY projects projects
 COPY packages packages
+COPY projects projects
 COPY apps/control-plane/api api
 WORKDIR /opt/launch-operations/api
 USER 65532:65532

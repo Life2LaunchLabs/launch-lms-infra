@@ -52,7 +52,7 @@ def validate(data: Any) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository):
         raise ValueError("source.repository must be owner/name")
     paths = data["source"].get("policy_paths", {})
-    for name in ("agents", "workflow", "architecture", "product", "feedback"):
+    for name in ("agents", "workflow", "architecture", "product", "design", "feedback"):
         value = paths.get(name)
         if not value or value.startswith(("/", "../")):
             raise ValueError(f"invalid policy path: {name}")
