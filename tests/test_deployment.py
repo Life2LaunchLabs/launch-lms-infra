@@ -286,6 +286,17 @@ class DeploymentTests(unittest.TestCase):
         jar.set_cookie(verifier.cookie('refresh_token_cookie', 'target', 'unstable.example', host_only=True))
         jar.set_cookie(verifier.cookie('launchlms_unstable_gate', 'gate', '.unstable.example'))
         self.assertEqual({'org.unstable.example', 'unstable.example'}, verifier.auth_domains(jar))
+        current='https://org.unstable.example/api/auth/handoff/issue?state=abc'
+        self.assertEqual(
+            'https://org.unstable.example/api/auth/handoff/issue/?state=abc',
+            verifier.validated_issue_redirect(
+                current,
+                'https://org.unstable.example/api/auth/handoff/issue/?state=abc',
+                'org.unstable.example',
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, 'unsafe'):
+            verifier.validated_issue_redirect(current, 'https://attacker.example/collect', 'org.unstable.example')
 
     def test_legacy_domain_redirects_apex_www_and_org_hosts(self):
         with tempfile.TemporaryDirectory() as tmp:

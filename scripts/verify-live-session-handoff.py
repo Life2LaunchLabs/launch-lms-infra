@@ -70,6 +70,16 @@ def auth_domains(jar: CookieJar) -> set[str]:
     return {item.domain.lstrip('.') for item in jar if item.name in AUTH_COOKIE_NAMES}
 
 
+def validated_issue_redirect(current_url: str, location: str, source: str) -> str:
+    destination = urljoin(current_url, location)
+    parsed = urlparse(destination)
+    if (parsed.scheme != 'https' or parsed.hostname != source or
+            parsed.path.rstrip('/') != '/api/auth/handoff/issue' or
+            any(name in parsed.query for name in ('ticket=', 'access_token=', 'refresh_token='))):
+        raise ValueError('Handoff issue returned an unsafe canonical redirect')
+    return destination
+
+
 def verify() -> None:
     env = read_env(ROOT / '.env')
     topology = load_topology(ROOT / 'deploy/environments/launch-lms.yaml')
@@ -120,6 +130,9 @@ def verify() -> None:
         raise ValueError('Handoff start did not redirect to the authenticated source host')
 
     issue_status, issue_headers, issue_body = request(opener, issue_url)
+    if issue_status in (301, 302, 307, 308):
+        issue_url = validated_issue_redirect(issue_url, issue_headers.get('Location', ''), source)
+        issue_status, issue_headers, issue_body = request(opener, issue_url)
     if issue_status != 200 or 'text/html' not in issue_headers.get('Content-Type', ''):
         raise ValueError(f'Handoff ticket issue returned HTTP {issue_status}')
     form = HandoffForm()
