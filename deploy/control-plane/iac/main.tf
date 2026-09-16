@@ -60,6 +60,12 @@ resource "digitalocean_droplet" "operations" {
 
   lifecycle {
     prevent_destroy = true
+
+    # DigitalOcean accepts SSH keys only at creation and does not return the
+    # original key IDs when an existing Droplet is imported. Keep ssh_keys in
+    # the creation contract while preventing an unknowable imported value from
+    # forcing replacement of the adopted host.
+    ignore_changes = [ssh_keys]
   }
 }
 
