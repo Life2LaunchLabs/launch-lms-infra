@@ -7,6 +7,9 @@ operations:
 
 application:
   cookie_scope: host-only
+  # Keep false until tenant-to-tenant login handoff and legacy-cookie expiry
+  # have been verified against the exact Launch LMS candidate revision.
+  session_handoff_verified: false
   production:
     base_domain: life2launch.app
     origin_template: https://{organization}.life2launch.app
@@ -14,6 +17,7 @@ application:
     base_domain: unstable.life2launch.app
     origin_template: https://{organization}.unstable.life2launch.app
     operations_surface_url: https://life2launch.dev
+    cutover_approved: false
 
 dns:
   app_zone: life2launch.app

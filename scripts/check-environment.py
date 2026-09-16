@@ -9,6 +9,8 @@ if env.get('LAUNCHLMS_DOMAIN') == topology['application']['unstable']['base_doma
     for key in ('LAUNCHLMS_COOKIE_SCOPE', 'NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE'):
         if env.get(key) != 'host-only':
             raise ValueError(f'{key} must be host-only on nested unstable')
+    if not topology['application']['unstable']['cutover_approved']:
+        raise ValueError('Nested unstable application cutover has not been approved')
 if env.get('LAUNCHLMS_DEVELOPMENT_MODE') != 'false' or env.get('LAUNCHLMS_ENV') != 'prod':
     raise ValueError('Both environments must use production runtime mode')
 if env.get('LAUNCHLMS_INTERNAL_BACKEND_URL') != 'http://localhost:9000':

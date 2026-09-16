@@ -22,6 +22,10 @@ if environment == 'production' and len(sys.argv) != 2:
 source = Path(sys.argv[2]) if len(sys.argv) == 3 else Path('release.lock.json')
 lock = module.validate(json.loads(source.read_text()), environment)
 topology = load_topology(Path(__file__).resolve().parents[1] / 'deploy/environments/launch-lms.yaml')
+if not topology['application']['session_handoff_verified']:
+    raise SystemExit('Host-only tenant session handoff has not passed acceptance')
+if environment == 'unstable' and not topology['application']['unstable']['cutover_approved']:
+    raise SystemExit('Nested unstable application cutover has not been approved')
 domain = topology['application'][environment]['base_domain']
 cookie_scope = topology['application']['cookie_scope']
 values = {

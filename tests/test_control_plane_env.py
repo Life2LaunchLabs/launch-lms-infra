@@ -71,5 +71,15 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not approved"):
             MODULE.require_operations_cutover(topology)
         approved = deepcopy(topology)
+        approved["application"]["session_handoff_verified"] = True
+        approved["application"]["unstable"]["cutover_approved"] = True
         approved["dns"]["operations_apex_cutover"] = True
+        validate_topology(approved)
         MODULE.require_operations_cutover(approved)
+
+    def test_nested_cutover_rejects_unverified_cross_org_handoff(self):
+        topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
+        unsafe = deepcopy(topology)
+        unsafe["application"]["unstable"]["cutover_approved"] = True
+        with self.assertRaisesRegex(ValueError, "session handoff"):
+            validate_topology(unsafe)

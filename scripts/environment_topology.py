@@ -39,8 +39,14 @@ def validate_topology(value: object) -> None:
     application = value.get("application", {})
     if application.get("cookie_scope") != "host-only":
         raise ValueError("nested hosted environments require host-only cookies")
+    if not isinstance(application.get("session_handoff_verified"), bool):
+        raise ValueError("tenant session handoff verification must be an explicit boolean")
     production = application.get("production", {})
     unstable = application.get("unstable", {})
+    if not isinstance(unstable.get("cutover_approved"), bool):
+        raise ValueError("nested unstable cutover must be explicitly approved")
+    if unstable["cutover_approved"] and not application["session_handoff_verified"]:
+        raise ValueError("nested unstable cutover requires verified tenant session handoff")
     production_domain = production.get("base_domain", "")
     unstable_domain = unstable.get("base_domain", "")
     if not HOST.fullmatch(production_domain) or not HOST.fullmatch(unstable_domain):
@@ -64,3 +70,7 @@ def validate_topology(value: object) -> None:
         raise ValueError("unstable apex DNS record must be named unstable")
     if dns.get("records", {}).get("unstable_wildcard") != "*.unstable":
         raise ValueError("nested tenant wildcard DNS record must be named *.unstable")
+    if not isinstance(dns.get("operations_apex_cutover"), bool):
+        raise ValueError("operations apex cutover must be an explicit boolean")
+    if dns["operations_apex_cutover"] and not unstable["cutover_approved"]:
+        raise ValueError("operations apex cutover requires approved nested unstable")

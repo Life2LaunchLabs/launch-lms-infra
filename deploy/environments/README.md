@@ -22,6 +22,14 @@ existing users and verify in a real browser that they are absent when visiting
 the new unstable origin. Account for the 30-day refresh-token lifetime; do not
 assume updating the cookie-setting code alone accomplishes this migration.
 
+Existing org switching depends on shared session cookies. Host-only mode also
+requires a short-lived, one-time authenticated handoff when a user follows a
+link from one organization host to another; verify Google and enterprise SSO,
+direct links, logout, and default-org redirects. `session_handoff_verified` and
+`unstable.cutover_approved` start false. New managed installations and the
+nested unstable deployment refuse to proceed until those gates are reviewed and
+enabled, even though OpenTofu can prepare the DNS records beforehand.
+
 The `.dev` apex remains on the old unstable host while
 `dns.operations_apex_cutover` is false. The control-plane deployment script also
 refuses to start in that state. After nested unstable passes routing, TLS, login,
