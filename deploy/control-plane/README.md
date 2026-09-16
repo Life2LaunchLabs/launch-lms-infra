@@ -46,6 +46,8 @@ DigitalOcean does not permit changing a Droplet's creation-time SSH keys in
 place and does not return their IDs after import. OpenTofu therefore ignores
 post-creation `ssh_keys` drift while retaining the configured keys for host
 creation; Ansible owns ongoing administrative-key installation and rotation.
+The host is organized through its dedicated DigitalOcean project rather than
+optional provider tags, keeping the automation token's permissions narrower.
 
 ## Repository-managed service deployment
 

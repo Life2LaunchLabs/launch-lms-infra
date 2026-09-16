@@ -1,5 +1,4 @@
 locals {
-  tags     = ["launch-operations", "control-plane"]
   topology = yamldecode(file("${path.module}/../../environments/launch-lms.yaml"))
 }
 
@@ -56,7 +55,6 @@ resource "digitalocean_droplet" "operations" {
   backups    = true
   monitoring = true
   ipv6       = true
-  tags       = local.tags
 
   lifecycle {
     prevent_destroy = true
