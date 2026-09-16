@@ -62,6 +62,13 @@ def validate(data: Any) -> None:
     checks = data.get("required_checks")
     if not isinstance(checks, list) or not checks or len(checks) != len(set(checks)):
         raise ValueError("required_checks must be a non-empty unique list")
+    deployment = data.get("deployment", {})
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", deployment.get("repository", "")):
+        raise ValueError("deployment.repository must be owner/name")
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.ya?ml", deployment.get("workflow", "")):
+        raise ValueError("deployment.workflow must be a workflow filename")
+    if not re.fullmatch(r"[A-Za-z0-9._/-]+", deployment.get("ref", "")):
+        raise ValueError("deployment.ref is invalid")
     environments = data.get("environments", {})
     origins = data.get("allowed_embed_origins", {})
     if set(environments) != set(origins):

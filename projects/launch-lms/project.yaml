@@ -34,6 +34,10 @@ candidate:
   schema_version: 1
   artifact_name: candidate
   required_fields: [source_sha, image, image_digest, architectures, version, migration, build_run_id]
+deployment:
+  repository: Life2LaunchLabs/launch-lms-infra
+  workflow: deploy.yaml
+  ref: main
 environments:
   unstable:
     source_branch: dev
