@@ -43,7 +43,9 @@ state and produces a post-adoption plan without applying cloud changes.
 `prevent_destroy` blocks an accidental replacement. Review that plan before
 dispatching `apply`. Thereafter the same workflow owns drift correction.
 DigitalOcean does not permit changing a Droplet's creation-time SSH keys in
-place, so an SSH-key mismatch must never be accepted as an unreviewed replacement.
+place and does not return their IDs after import. OpenTofu therefore ignores
+post-creation `ssh_keys` drift while retaining the configured keys for host
+creation; Ansible owns ongoing administrative-key installation and rotation.
 
 ## Repository-managed service deployment
 
