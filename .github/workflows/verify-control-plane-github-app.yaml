@@ -35,7 +35,7 @@ jobs:
             "INFRA_REVISION=${INFRA_REVISION} bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/launch-operations
-          test "$(git rev-parse HEAD)" = "$INFRA_REVISION"
+          test "$(runuser -u launchops -- git rev-parse HEAD)" = "$INFRA_REVISION"
           docker compose -f deploy/control-plane/compose.yaml exec -T control-plane-api python - <<'PY'
           import asyncio
           import httpx

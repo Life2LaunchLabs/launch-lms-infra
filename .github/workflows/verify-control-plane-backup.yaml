@@ -43,5 +43,5 @@ jobs:
           bash scripts/operations-db.sh backup "$backup"
           bash scripts/operations-db.sh restore-test "$backup"
           test "$(stat -c %a "$backup")" = 600
-          echo "Backup and disconnected restore verified at $(git rev-parse HEAD)."
+          echo "Backup and disconnected restore verified at $(runuser -u launchops -- git rev-parse HEAD)."
           REMOTE
