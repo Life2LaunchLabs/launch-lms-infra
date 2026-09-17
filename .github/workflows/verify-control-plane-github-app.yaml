@@ -1,0 +1,69 @@
+name: Verify private control-plane GitHub App
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-control-plane
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - name: Install pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Mint repository-scoped read tokens inside the private API
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+          INFRA_REVISION: ${{ github.sha }}
+        run: |
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            "INFRA_REVISION=${INFRA_REVISION} bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/launch-operations
+          test "$(git rev-parse HEAD)" = "$INFRA_REVISION"
+          docker compose -f deploy/control-plane/compose.yaml exec -T control-plane-api python - <<'PY'
+          import asyncio
+          import httpx
+          from config import Settings
+          from packages.connectors.github import GitHubAppCredentials
+
+          async def main():
+              settings = Settings()
+              app = GitHubAppCredentials(
+                  settings.github_app_id,
+                  settings.github_installation_id,
+                  settings.github_app_private_key,
+              )
+              targets = (
+                  ("Life2LaunchLabs/launch-lms", "WORKFLOW.md", "dev"),
+                  ("Life2LaunchLabs/launch-lms-infra", "deploy/environments/launch-lms.yaml", "main"),
+              )
+              for repository, path, ref in targets:
+                  connector = await app.connector(repository, {"contents": "read"})
+                  async with httpx.AsyncClient(timeout=20) as client:
+                      response = await client.get(
+                          f"https://api.github.com/repos/{repository}/contents/{path}",
+                          headers=connector.headers(),
+                          params={"ref": ref},
+                      )
+                      response.raise_for_status()
+                  print(f"GitHub App read access verified for {repository}.")
+
+          asyncio.run(main())
+          PY
+          REMOTE
