@@ -26,6 +26,22 @@ def load(name):
 
 
 class DeploymentTests(unittest.TestCase):
+    def test_feedback_migration_uses_one_off_egress_and_protected_unstable_gate(self):
+        workflow = (ROOT/'.github/workflows/migrate-feedback-ownership.yaml').read_text()
+        deployment_workflow = (ROOT/'.github/workflows/deploy.yaml').read_text()
+        script = (ROOT/'deploy/feedback-migration/run.sh').read_text()
+        override = (ROOT/'deploy/feedback-migration/compose.yml').read_text()
+        self.assertIn('environment: unstable', workflow)
+        self.assertIn('group: deploy-unstable', workflow)
+        self.assertNotIn('deploy/feedback-migration', deployment_workflow)
+        self.assertIn('[[ "$EXPECTED_DIGEST" =~ ^[0-9a-f]{64}$ ]]', workflow)
+        self.assertIn('LAUNCHLMS_OPERATIONS_SUBJECT_SECRET: ${{ secrets.LAUNCHLMS_OPERATIONS_SUBJECT_SECRET }}', workflow)
+        self.assertIn('services:\n  migrate:\n    networks: [default, egress]', override)
+        self.assertNotIn('launch-lms:', override)
+        self.assertIn('docker compose run --rm --no-deps -T', script)
+        self.assertIn('deployed-release.json', script)
+        self.assertIn('test "$DEPLOY_ENVIRONMENT" = unstable', script)
+
     def lock(self, branch='dev'):
         repo = 'ghcr.io/life2launchlabs/launch-lms'
         digest = 'sha256:'+'a'*64

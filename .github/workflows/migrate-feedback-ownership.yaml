@@ -1,0 +1,83 @@
+name: Migrate FEED ownership
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [audit, apply]
+        default: audit
+        required: true
+      expected_count:
+        description: Exact issue count from an approved audit; required for apply
+        required: false
+      expected_digest:
+        description: Exact SHA-256 digest from an approved audit; required for apply
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: deploy-unstable
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: unstable
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate dispatch inputs before SSH transport
+        env:
+          MODE: ${{ inputs.mode }}
+          EXPECTED_COUNT: ${{ inputs.expected_count }}
+          EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+        run: |
+          if [[ "$MODE" == apply ]]; then
+            [[ "$EXPECTED_COUNT" =~ ^[1-9][0-9]*$ ]]
+            [[ "$EXPECTED_DIGEST" =~ ^[0-9a-f]{64}$ ]]
+          else
+            [[ "$MODE" == audit ]]
+            [[ -z "$EXPECTED_COUNT" && -z "$EXPECTED_DIGEST" ]]
+          fi
+      - name: Require protected migration credentials
+        env:
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+          DROPLET_SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DROPLET_SSH_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          LAUNCHLMS_OPERATIONS_SUBJECT_SECRET: ${{ secrets.LAUNCHLMS_OPERATIONS_SUBJECT_SECRET }}
+          LAUNCHLMS_FEEDBACK_JIRA_BASE_URL: ${{ secrets.LAUNCHLMS_FEEDBACK_JIRA_BASE_URL }}
+          LAUNCHLMS_FEEDBACK_JIRA_EMAIL: ${{ secrets.LAUNCHLMS_FEEDBACK_JIRA_EMAIL }}
+          LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN: ${{ secrets.LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN }}
+        run: |
+          for name in DROPLET_HOST DROPLET_USER DROPLET_SSH_KEY DROPLET_SSH_FINGERPRINT LAUNCHLMS_OPERATIONS_SUBJECT_SECRET LAUNCHLMS_FEEDBACK_JIRA_BASE_URL LAUNCHLMS_FEEDBACK_JIRA_EMAIL LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN; do
+            test -n "${!name}" || { echo "Missing protected secret: $name" >&2; exit 1; }
+          done
+      - name: Run exact deployed unstable migration under deployment lock
+        uses: appleboy/ssh-action@v1
+        env:
+          INFRA_REVISION: ${{ github.sha }}
+          FEEDBACK_MIGRATION_MODE: ${{ inputs.mode }}
+          FEEDBACK_MIGRATION_EXPECTED_COUNT: ${{ inputs.expected_count }}
+          FEEDBACK_MIGRATION_EXPECTED_DIGEST: ${{ inputs.expected_digest }}
+          LAUNCHLMS_OPERATIONS_SUBJECT_SECRET: ${{ secrets.LAUNCHLMS_OPERATIONS_SUBJECT_SECRET }}
+          LAUNCHLMS_FEEDBACK_JIRA_BASE_URL: ${{ secrets.LAUNCHLMS_FEEDBACK_JIRA_BASE_URL }}
+          LAUNCHLMS_FEEDBACK_JIRA_EMAIL: ${{ secrets.LAUNCHLMS_FEEDBACK_JIRA_EMAIL }}
+          LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN: ${{ secrets.LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN }}
+          LAUNCHLMS_FEEDBACK_JIRA_PROJECT_KEY: FEED
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          envs: INFRA_REVISION,FEEDBACK_MIGRATION_MODE,FEEDBACK_MIGRATION_EXPECTED_COUNT,FEEDBACK_MIGRATION_EXPECTED_DIGEST,LAUNCHLMS_OPERATIONS_SUBJECT_SECRET,LAUNCHLMS_FEEDBACK_JIRA_BASE_URL,LAUNCHLMS_FEEDBACK_JIRA_EMAIL,LAUNCHLMS_FEEDBACK_JIRA_API_TOKEN,LAUNCHLMS_FEEDBACK_JIRA_PROJECT_KEY
+          command_timeout: 30m
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            exec 9>.deploy.lock
+            flock -w 1800 9
+            test "$(cat .deployment-environment)" = unstable
+            test -z "$(git status --porcelain --untracked-files=no)"
+            git fetch origin main
+            git merge-base --is-ancestor "$INFRA_REVISION" origin/main
+            git checkout --detach "$INFRA_REVISION"
+            bash deploy/feedback-migration/run.sh

@@ -1,0 +1,4 @@
+# Only a one-off migration container may reach Jira; the unstable app stays isolated.
+services:
+  migrate:
+    networks: [default, egress]
