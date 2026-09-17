@@ -34,6 +34,12 @@ def runtime():
 
 
 class ControlPlaneEnvironmentTests(unittest.TestCase):
+    def test_operations_apex_adoption_is_repository_discovered(self):
+        workflow = (ROOT / ".github/workflows/control-plane-host.yaml").read_text()
+        self.assertIn("domains/life2launch.dev/records?type=A&name=%40", workflow)
+        self.assertIn('select(.type == "A" and .name == "@" and .data == $expected)', workflow)
+        self.assertIn("Expected exactly one legacy operations apex A record", workflow)
+
     def test_accepts_isolated_matching_runtime(self):
         control, postgres, resolver = runtime()
         MODULE.validate(control, postgres, resolver)

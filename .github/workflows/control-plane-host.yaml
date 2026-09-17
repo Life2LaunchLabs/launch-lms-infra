@@ -22,7 +22,7 @@ on:
         type: string
         required: false
       adopt_operations_apex_record_id:
-        description: Existing life2launch.dev apex record ID; use only for the approved cutover apply
+        description: Optional recovery override; the approved cutover normally discovers the existing apex record
         type: string
         required: false
 
@@ -149,10 +149,17 @@ jobs:
             exit 0
           fi
           if grep -Eq '^  operations_apex_cutover: true$' ../../environments/launch-lms.yaml; then
-            test -n "$APEX_RECORD_ID" || {
-              echo 'Existing .dev apex DNS record ID required before cutover apply' >&2
-              exit 1
-            }
+            if [ -z "$APEX_RECORD_ID" ]; then
+              LEGACY_IP="$(sed -n 's/^  unstable_ipv4: //p' ../../environments/launch-lms.yaml)"
+              RECORDS="$(curl --fail --silent --show-error \
+                --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+                'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&name=%40&per_page=200')"
+              APEX_RECORD_ID="$(jq -er --arg expected "$LEGACY_IP" '
+                [.domain_records[] | select(.type == "A" and .name == "@" and .data == $expected)]
+                | if length == 1 then .[0].id
+                  else error("Expected exactly one legacy operations apex A record") end
+              ' <<<"$RECORDS")"
+            fi
             tofu import 'digitalocean_record.operations_apex[0]' "life2launch.dev,${APEX_RECORD_ID}"
           fi
       - name: Produce the reviewed plan

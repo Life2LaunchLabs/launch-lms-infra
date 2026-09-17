@@ -61,9 +61,10 @@ refuses to start in that state. After nested unstable passes routing, TLS, login
 tenant-isolation, and rollback checks:
 
 1. change `operations_apex_cutover` to `true` in a reviewed pull request;
-2. dispatch the protected host workflow with the existing `.dev` apex record ID
-   so OpenTofu adopts rather than duplicates it (the workflow refuses an apply
-   without the ID if the record is not already in state);
+2. dispatch the protected host workflow; it discovers the unique `.dev` apex A
+   record still pointing to the versioned legacy unstable IP and imports it so
+   OpenTofu adopts rather than duplicates it (the optional record-ID input is a
+   recovery override only);
 3. review and apply the plan, which moves the apex to the operations Droplet;
 4. dispatch the protected control-plane deployment.
 
