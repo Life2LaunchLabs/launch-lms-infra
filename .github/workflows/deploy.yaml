@@ -89,3 +89,46 @@ jobs:
               python3 scripts/accept-candidate.py
             fi
             bash deploy.sh
+      - name: Observe the running unstable image on its host
+        id: observation
+        if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'repository_dispatch' || inputs.environment == 'unstable')
+        uses: appleboy/ssh-action@v1
+        env:
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          envs: DEPLOY_RUN_ID,DEPLOY_RUN_ATTEMPT
+          capture_stdout: true
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            python3 scripts/observe-unstable-deployment.py "$DEPLOY_RUN_ID" "$DEPLOY_RUN_ATTEMPT"
+      - name: Validate and save host observation
+        if: steps.observation.outcome == 'success'
+        env:
+          HOST_OBSERVATION: ${{ steps.observation.outputs.stdout }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          INFRA_REVISION: ${{ github.sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          value = json.loads(os.environ['HOST_OBSERVATION'])
+          assert value['schema_version'] == 1 and value['environment'] == 'unstable'
+          assert value['deploy_run_id'] == os.environ['DEPLOY_RUN_ID']
+          assert value['deploy_run_attempt'] == os.environ['DEPLOY_RUN_ATTEMPT']
+          assert value['infra_sha'] == os.environ['INFRA_REVISION']
+          pathlib.Path('host-observation.json').write_text(json.dumps(value, sort_keys=True) + '\n')
+          PY
+      - name: Publish protected host observation
+        if: steps.observation.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-observation-${{ github.run_attempt }}
+          path: host-observation.json
+          if-no-files-found: error
+          retention-days: 30

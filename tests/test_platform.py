@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import importlib.util
 import asyncio
+import importlib.util
 import json
-from pathlib import Path
 import sys
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from pathlib import Path
+from zipfile import ZipFile
 
-from sqlalchemy import create_engine, inspect
 import httpx
-
+from sqlalchemy import create_engine, inspect
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -87,6 +87,25 @@ class CandidateTests(unittest.TestCase):
 
 
 class ConnectorTests(unittest.TestCase):
+    def test_github_reads_only_the_named_json_artifact(self):
+        from packages.connectors.github import GitHubConnector
+
+        buffer = BytesIO()
+        with ZipFile(buffer, "w") as archive:
+            archive.writestr("candidate.json", json.dumps({"commit_sha": "a" * 40}))
+
+        def handler(request):
+            self.assertEqual(request.headers["authorization"], "Bearer installation-secret")
+            if request.url.path.endswith("/artifacts"):
+                return httpx.Response(200, json={"artifacts": [{"id": 7, "name": "candidate", "expired": False}]})
+            if request.url.path.endswith("/zip"):
+                return httpx.Response(200, content=buffer.getvalue())
+            raise AssertionError(request.url)
+
+        connector = GitHubConnector("installation-secret", "owner/repo", transport=httpx.MockTransport(handler))
+        self.assertEqual(asyncio.run(connector.workflow_artifact_json("owner/repo", 12, "candidate", "candidate.json")),
+                         {"commit_sha": "a" * 40})
+
     def test_jira_adapter_brokers_issue_properties_without_secret_repr(self):
         from packages.connectors.jira import JiraAdapter, JiraCredentials
         requests = []
@@ -192,6 +211,7 @@ class ConnectorTests(unittest.TestCase):
         import jwt
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
+
         from packages.connectors.github import GitHubAppCredentials
 
         private = generate_private_key(public_exponent=65537, key_size=2048)

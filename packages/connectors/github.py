@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import json
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-import time
+from io import BytesIO
+from zipfile import ZipFile
+
 import httpx
 import jwt
 
@@ -17,7 +21,7 @@ class GitHubAppCredentials:
 
     async def connector(self, repository: str, permissions: dict[str, str],
                         api_url: str = "https://api.github.com",
-                        transport: httpx.AsyncBaseTransport | None = None) -> "GitHubConnector":
+                        transport: httpx.AsyncBaseTransport | None = None) -> GitHubConnector:
         if repository.count("/") != 1 or not all(repository.split("/")):
             raise ValueError("A single owner/repository is required for installation tokens")
         if not permissions or any(level not in {"read", "write"} for level in permissions.values()):
@@ -77,6 +81,52 @@ class GitHubConnector:
             )
             response.raise_for_status()
             return response.json()
+
+    async def workflow_runs(self, repository: str, workflow: str, branch: str, limit: int = 10) -> list[dict]:
+        self._require_repository(repository)
+        if "/" in workflow or not 1 <= limit <= 100:
+            raise ValueError("A workflow filename and bounded limit are required")
+        async with httpx.AsyncClient(timeout=30, transport=self.transport) as client:
+            response = await client.get(
+                f"{self.api_url}/repos/{repository}/actions/workflows/{workflow}/runs",
+                headers=self.headers(), params={"branch": branch, "per_page": limit},
+            )
+            response.raise_for_status()
+            return response.json()["workflow_runs"]
+
+    async def workflow_artifact_json(self, repository: str, run_id: int, name: str, filename: str) -> dict | None:
+        """Read one small JSON artifact without exposing an installation token or archive paths."""
+        self._require_repository(repository)
+        if not name or not filename or "/" in name or "/" in filename:
+            raise ValueError("An artifact name and a flat JSON filename are required")
+        async with httpx.AsyncClient(timeout=30, transport=self.transport, follow_redirects=True) as client:
+            response = await client.get(
+                f"{self.api_url}/repos/{repository}/actions/runs/{run_id}/artifacts",
+                headers=self.headers(), params={"per_page": 100},
+            )
+            response.raise_for_status()
+            matches = [artifact for artifact in response.json()["artifacts"] if artifact.get("name") == name and not artifact.get("expired")]
+            if not matches:
+                return None
+            if len(matches) != 1:
+                raise ValueError("Multiple matching workflow artifacts")
+            async with client.stream(
+                "GET", f"{self.api_url}/repos/{repository}/actions/artifacts/{matches[0]['id']}/zip",
+                headers=self.headers(),
+            ) as archive:
+                archive.raise_for_status()
+                chunks = bytearray()
+                async for chunk in archive.aiter_bytes():
+                    chunks.extend(chunk)
+                    if len(chunks) > 1024 * 1024:
+                        raise ValueError("Workflow evidence archive is too large")
+        with ZipFile(BytesIO(chunks)) as zipped:
+            if zipped.namelist() != [filename] or zipped.getinfo(filename).file_size > 64 * 1024:
+                raise ValueError("Workflow evidence archive has unexpected content")
+            value = json.loads(zipped.read(filename))
+        if not isinstance(value, dict):
+            raise TypeError("Workflow evidence must be an object")
+        return value
 
     async def collaborator_has_read_access(self, repository: str, username: str) -> bool:
         """Check current repository access using an installation-scoped token."""

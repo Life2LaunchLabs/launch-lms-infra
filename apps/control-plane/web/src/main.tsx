@@ -6,6 +6,7 @@ type Operator = { login: string }
 type Project = { display_name: string; repository: string; environments: Record<string, unknown> }
 type Work = { issue: string; issue_url: string; state: string; started_at?: string | null; last_event_at?: string | null; due_at?: string | null; blocked_at?: string | null; turns?: number | null; attempt?: number | null; reason?: string }
 type Status = { availability: 'live' | 'stale'; generated_at: string | null; observed_at: string; counts: { running: number; retrying: number; blocked: number }; running: Work[]; retrying: Work[]; blocked: Work[] }
+type Deployment = { state: string; detail: string; source_sha?: string; image_digest?: string; observed_at?: string; build_run_url?: string; deploy_run_url?: string }
 
 function time(value?: string | null) {
   if (!value) return 'Time unavailable'
@@ -28,6 +29,7 @@ function App() {
   const [status, setStatus] = useState<Status | null>(null)
   const [statusError, setStatusError] = useState('')
   const [projectError, setProjectError] = useState('')
+  const [deployment, setDeployment] = useState<Deployment | null>(null)
 
   useEffect(() => {
     let active = true
@@ -39,6 +41,15 @@ function App() {
         if (active) { setStatus(data); setStatusError('') }
       } catch {
         if (active) { setStatus(null); setStatusError('Symphony status is unavailable. Work cannot be confirmed until the connection recovers.') }
+      }
+    }
+    async function refreshDeployment() {
+      try {
+        const response = await fetch('/api/v1/projects/launch-lms/deployments/unstable/status', { cache: 'no-store' })
+        if (!response.ok) throw new Error('Deployment evidence unavailable')
+        if (active) setDeployment(await response.json())
+      } catch {
+        if (active) setDeployment({ state: 'unavailable', detail: 'Deployment evidence could not be loaded.' })
       }
     }
     async function load() {
@@ -53,9 +64,10 @@ function App() {
         if (active) setProjectError('Project registration is unavailable.')
       }
       await refreshStatus()
+      await refreshDeployment()
     }
     void load()
-    const timer = window.setInterval(() => { if (active) void refreshStatus() }, 30000)
+    const timer = window.setInterval(() => { if (active) { void refreshStatus(); void refreshDeployment() } }, 30000)
     return () => { active = false; window.clearInterval(timer) }
   }, [])
 
@@ -69,7 +81,11 @@ function App() {
     <section aria-labelledby="agent-title"><div className="section-head"><div><p className="eyebrow">Agent</p><h2 id="agent-title">Symphony</h2></div><span className={`badge ${status?.availability === 'live' ? 'live' : 'warning'}`}>{status?.availability ?? 'Unavailable'}</span></div>
       {statusError ? <p role="alert">{statusError}</p> : status ? <><p className="muted">Snapshot {time(status.generated_at)} · checked {time(status.observed_at)}{status.availability === 'stale' ? ' · Status may be out of date' : ''}</p><div className="columns"><div><h3>Running <span>{status.counts.running}</span></h3><WorkList items={status.running} empty="No active agent run is reported." /></div><div><h3>Retrying <span>{status.counts.retrying}</span></h3><WorkList items={status.retrying} empty="No retry is scheduled." /></div><div><h3>Blocked <span>{status.counts.blocked}</span></h3><WorkList items={status.blocked} empty="No blocked agent run is reported." /></div></div><p className="muted">This live snapshot does not prove a completed attempt; historical evidence requires the attempt journal.</p></> : <p role="status">Loading Symphony status…</p>}
     </section>
-    <section aria-labelledby="deployment-title"><div className="section-head"><div><p className="eyebrow">Deployment</p><h2 id="deployment-title">Verification</h2></div><span className="badge warning">Incomplete</span></div><p>Deployment is not attested. Candidate artifact, successful workflow run, and host-observed source SHA and image digest must agree before this view can report a deployment.</p><p className="muted">The protected infrastructure workflow remains the deployment authority.</p></section>
+    <section aria-labelledby="deployment-title"><div className="section-head"><div><p className="eyebrow">Deployment · unstable</p><h2 id="deployment-title">Verification</h2></div><span className={`badge ${deployment?.state === 'deployed' ? 'live' : 'warning'}`}>{deployment?.state === 'deployed' ? 'Deployed' : 'Incomplete'}</span></div>
+      <p role="status">{deployment?.detail ?? 'Checking candidate, workflow, and host evidence…'}</p>
+      {deployment?.state === 'deployed' && <><p><strong>Source</strong> <code>{deployment.source_sha}</code><br /><strong>Image</strong> <code>{deployment.image_digest}</code></p><p className="muted">Host observed {time(deployment.observed_at)} · <a href={deployment.build_run_url} target="_blank" rel="noopener noreferrer">Candidate build ↗</a> · <a href={deployment.deploy_run_url} target="_blank" rel="noopener noreferrer">Deployment workflow ↗</a></p></>}
+      {deployment && deployment.state !== 'deployed' && <p className="muted">State: {deployment.state.replaceAll('_', ' ')}</p>}
+    </section>
   </main>
 }
 
