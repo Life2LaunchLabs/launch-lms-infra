@@ -14,6 +14,13 @@ that gate and checks API, web, and Symphony status reachability from inside the
 private stack. The portal still requires GitHub OAuth when public routing is
 later enabled.
 
+An operator can create the two files without hand-formatting them by running
+`python3 scripts/setup-operations-runtime.py` from a local infra checkout after
+creating the OAuth App and installing the GitHub App. It prompts for the PEM file
+and Jira/OAuth values, generates fresh PostgreSQL and session secrets, validates
+the DNS-independent topology, and uploads the two environment secrets directly
+through `gh`. It prints neither the values nor the generated files.
+
 Versioned SQL is under `postgres/`. The API image applies pending files in a
 single transaction before API startup and rejects a changed migration checksum.
 The first migration is safe for a previously initialized database. For a local
