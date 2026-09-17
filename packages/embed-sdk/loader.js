@@ -113,11 +113,11 @@
       protocol: PROTOCOL,
       update(next) {
         context = Object.assign({}, context, next || {})
-        if (connected) send({ type: CONTEXT, protocol: PROTOCOL, nonce: handshakeNonce, context })
+        if (connected) send({ type: CONTEXT, protocol: PROTOCOL, nonce: activeNonce, context })
       },
       open(panel) {
         openedBy = global.document.activeElement
-        send({ type: COMMAND, protocol: PROTOCOL, nonce: handshakeNonce, command: 'open', panel: panel || 'feedback' })
+        send({ type: COMMAND, protocol: PROTOCOL, nonce: activeNonce, command: 'open', panel: panel || 'feedback' })
       },
       destroy() {
         if (destroyed) return
