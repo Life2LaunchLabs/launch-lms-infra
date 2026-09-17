@@ -1,0 +1,33 @@
+name: Verify live Symphony status privately
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Check live private state and print only sanitized issue links
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+        run: |
+          set -o pipefail
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            'curl --fail --silent --show-error --max-time 20 http://127.0.0.1:8788/api/v1/state' \
+            | python3 scripts/verify-live-symphony.py
