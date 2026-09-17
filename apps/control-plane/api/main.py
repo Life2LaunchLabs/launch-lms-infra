@@ -28,6 +28,7 @@ from embed import router as embed_router  # noqa: E402
 from feedback import router as feedback_router  # noqa: E402
 from announcements import router as announcements_router  # noqa: E402
 from orchestration import sanitized_status  # noqa: E402
+from deployment_evidence import deployment_status  # noqa: E402
 
 
 @asynccontextmanager
@@ -195,3 +196,11 @@ async def orchestration_status(_: dict = Depends(require_operator)) -> dict:
         return sanitized_status(raw, load_project("launch-lms").data["tracker"]["site"])
     except ValueError as error:
         raise HTTPException(503, "Orchestrator status is unavailable") from error
+
+
+@app.get("/api/v1/projects/{project_id}/deployments/{environment}/status")
+async def read_deployment_status(project_id: str, environment: str, _: dict = Depends(require_operator)) -> dict:
+    manifest = load_project(project_id)
+    if environment != "unstable" or environment not in manifest.data["environments"]:
+        raise HTTPException(404, "Unknown deployment environment")
+    return await deployment_status(app.state.settings, manifest.data)

@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from pathlib import Path
 import sys
 import unittest
+from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps/control-plane/api"))
 from config import Settings
+from deployment_evidence import reconcile
 from main import app
 from orchestration import sanitized_status
 
@@ -69,6 +70,23 @@ class ReadOnlyTests(unittest.TestCase):
                 self.assertEqual((await asyncio.wait_for(client.post("/api/v1/auth/logout"), timeout=2)).status_code, 204)
 
         asyncio.run(exercise())
+
+
+class DeploymentEvidenceTests(unittest.TestCase):
+    def test_exact_candidate_workflow_and_host_agreement_is_required(self):
+        source, digest = "a" * 40, "sha256:" + "b" * 64
+        observation = {"schema_version": 1, "environment": "unstable", "source_sha": source,
+                       "image_digest": digest, "build_run_id": "12", "infra_sha": "c" * 40,
+                       "deploy_run_id": "34", "deploy_run_attempt": "1",
+                       "observed_at": "2026-09-17T22:00:00+00:00"}
+        candidate = {"build_run_id": "12", "commit_sha": source, "image_digest": digest,
+                     "image_ref": "ghcr.io/life2launchlabs/launch-lms@" + digest}
+        deploy = {"id": 34, "run_attempt": 1, "head_sha": "c" * 40}
+        build = {"id": 12, "head_sha": source}
+        self.assertEqual(reconcile(observation, candidate, deploy, build)["state"], "deployed")
+        self.assertEqual(reconcile({**observation, "image_digest": "sha256:" + "d" * 64}, candidate, deploy, build)["state"], "mismatch")
+        self.assertEqual(reconcile(observation, {**candidate, "commit_sha": "e" * 40}, deploy, build)["state"], "mismatch")
+        self.assertEqual(reconcile(observation, candidate, {**deploy, "run_attempt": 2}, build)["state"], "mismatch")
 
 
 if __name__ == "__main__":

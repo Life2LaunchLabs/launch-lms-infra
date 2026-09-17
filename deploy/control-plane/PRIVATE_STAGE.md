@@ -43,6 +43,11 @@ login, running, retrying, blocked, empty, stale, unavailable, keyboard focus, an
 issue identifiers. A browser screenshot comparison and live OAuth/provider
 acceptance remain required before claiming UI handoff.
 
-The deployment view deliberately says **Incomplete** until a protected host
-attestation, candidate artifact, and successful workflow run are reconciled.
+The deployment view reads the latest unstable deployment workflow through the
+GitHub App. Its workflow artifact records the source SHA and image digest read
+from the running host after deployment. The view says **Deployed** only when
+that artifact, the app candidate artifact, and both successful Actions runs
+agree on exact revisions. Missing, failed, and mismatched evidence is shown as
+**Incomplete** with a reason. The host observation is a record of the deploy
+time, not continuous monitoring of later manual host changes.
 No status-poll response is used as a durable attempt record.
