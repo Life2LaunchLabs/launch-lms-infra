@@ -55,13 +55,15 @@ class JiraAdapter(TrackerAdapter):
 
     async def create_issue(self, project: str, summary: str, description: dict, properties: dict, idempotency_key: str) -> TrackerIssue:
         async with self._client() as client:
-            response = await client.post(self._path("/rest/api/3/issue"), json={"fields": {
-                "project": {"key": project}, "issuetype": {"name": "Task"},
-                "summary": summary, "description": description,
-            }}, headers={"X-Idempotency-Key": idempotency_key})
+            response = await client.post(self._path("/rest/api/3/issue"), json={
+                "fields": {
+                    "project": {"key": project}, "issuetype": {"name": "Task"},
+                    "summary": summary, "description": description,
+                },
+                "properties": [{"key": name, "value": value} for name, value in properties.items()],
+            }, headers={"X-Idempotency-Key": idempotency_key})
             response.raise_for_status()
             key = response.json()["key"]
-        await self.set_properties(key, properties)
         return await self.get_issue(key)
 
     async def get_issue(self, key: str) -> TrackerIssue:

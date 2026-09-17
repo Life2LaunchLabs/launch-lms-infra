@@ -35,6 +35,7 @@ class EmbedSession(Base):
     role: Mapped[str] = mapped_column(String(64), nullable=False)
     parent_origin: Mapped[str] = mapped_column(String(255), nullable=False)
     nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    credential_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

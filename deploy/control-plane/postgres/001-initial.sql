@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS embed_sessions (
   role varchar(64) NOT NULL,
   parent_origin varchar(255) NOT NULL,
   nonce_hash char(64) NOT NULL UNIQUE,
+  credential_hash char(64) NOT NULL UNIQUE,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );

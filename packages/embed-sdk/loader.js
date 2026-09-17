@@ -28,6 +28,7 @@
     }
 
     const handshakeNonce = nonce()
+    let activeNonce = handshakeNonce
     const channel = new MessageChannel()
     const root = global.document.createElement('div')
     const frame = global.document.createElement('iframe')
@@ -37,6 +38,7 @@
     let connected = false
     let openedBy = null
     let unavailableReported = false
+    let renewal = 0
 
     root.dataset.launchOperationsRoot = 'v1'
     root.style.cssText = 'position:fixed;right:0;bottom:0;left:0;height:64px;z-index:2147483000;pointer-events:none;'
@@ -66,18 +68,25 @@
       if (!destroyed) channel.port1.postMessage(message)
     }
 
+    async function issueSession(sessionNonce) {
+      try {
+        const token = await options.getSessionToken({ nonce: sessionNonce, protocol: PROTOCOL })
+        if (destroyed || typeof token !== 'string' || !token) return reportUnavailable()
+        activeNonce = sessionNonce
+        send({ type: SESSION, protocol: PROTOCOL, nonce: sessionNonce, token, context })
+        global.clearTimeout(renewal)
+        renewal = global.setTimeout(() => issueSession(nonce()), 180000)
+      } catch (_) {
+        reportUnavailable()
+      }
+    }
+
     channel.port1.onmessage = async event => {
       const message = event.data || {}
-      if (message.nonce !== handshakeNonce) return
+      if (message.nonce !== activeNonce) return
       if (message.type === READY && !connected) {
         connected = true
-        try {
-          const token = await options.getSessionToken({ nonce: handshakeNonce, protocol: PROTOCOL })
-          if (destroyed || typeof token !== 'string' || !token) return reportUnavailable()
-          send({ type: SESSION, protocol: PROTOCOL, nonce: handshakeNonce, token, context })
-        } catch (_) {
-          reportUnavailable()
-        }
+        await issueSession(handshakeNonce)
       } else if (message.type === STATE) {
         if (message.available === false) return reportUnavailable()
         const open = message.open === true
@@ -114,6 +123,7 @@
         if (destroyed) return
         destroyed = true
         global.clearTimeout(timeout)
+        global.clearTimeout(renewal)
         channel.port1.close()
         root.remove()
         global.document.documentElement.style.paddingBottom = previousPadding

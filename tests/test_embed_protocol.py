@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -109,10 +110,18 @@ class EmbedProtocolTests(unittest.TestCase):
 
     def test_redeem_persists_no_token_and_rejects_replay(self):
         with Session(self.engine) as session:
-            record = embed.redeem(self.token(), self.payload(), session, self.manifest, self.now)
+            record, credential = embed.redeem(self.token(), self.payload(), session, self.manifest, self.now)
             self.assertEqual(record.parent_origin, "https://unstable.life2launch.app")
             self.assertEqual(record.role, "Learner")
             self.assertFalse(hasattr(record, "token"))
+            self.assertNotEqual(record.credential_hash, credential)
+            authenticated = embed.require_embed_session(f"Session {credential}", session)
+            self.assertEqual(authenticated.id, record.id)
+            record.expires_at = self.now - timedelta(seconds=1)
+            session.add(record); session.commit()
+            with self.assertRaises(HTTPException) as expired:
+                embed.require_embed_session(f"Session {credential}", session)
+            self.assertEqual(expired.exception.status_code, 401)
         with Session(self.engine) as session, self.assertRaisesRegex(ValueError, "already been used"):
             embed.redeem(self.token(), self.payload(), session, self.manifest, self.now)
 
@@ -121,10 +130,12 @@ class EmbedProtocolTests(unittest.TestCase):
         iframe = (ROOT / "apps/control-plane/web/public/embed/v1/embed.js").read_text()
         self.assertIn("new MessageChannel()", loader)
         self.assertIn("[channel.port2]", loader)
+        self.assertIn("issueSession(nonce()), 180000", loader)
         self.assertNotIn("searchParams.set('token'", loader)
         self.assertNotIn("localStorage", loader + iframe)
         self.assertNotIn("sessionStorage", loader + iframe)
         self.assertIn("Authorization: `Bearer ${token}`", iframe)
+        self.assertIn("platformSession = redeemed.session_token", iframe)
         self.assertIn("event.origin !== parentOrigin", iframe)
 
     def test_csp_distinguishes_operator_app_sdk_and_embed(self):

@@ -5,12 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import re
+import secrets
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 import jwt
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from models import EmbedSession
@@ -109,14 +111,17 @@ def verify_token(token: str, payload: EmbedSessionRequest, manifest: ProjectMani
 
 
 def redeem(token: str, payload: EmbedSessionRequest, session: Session,
-           manifest: ProjectManifest | None = None, now: datetime | None = None) -> EmbedSession:
+           manifest: ProjectManifest | None = None,
+           now: datetime | None = None) -> tuple[EmbedSession, str]:
     project = manifest or load_project("launch-lms")
     claims = verify_token(token, payload, project, now=now)
+    credential = secrets.token_urlsafe(32)
     record = EmbedSession(
         project_id=claims["project"], environment=claims["environment"],
         opaque_user_id=claims["sub"], opaque_org_id=claims["org"], role=claims["role"],
         parent_origin=payload.parent_origin,
         nonce_hash=hashlib.sha256(payload.nonce.encode()).hexdigest(),
+        credential_hash=hashlib.sha256(credential.encode()).hexdigest(),
         expires_at=datetime.fromtimestamp(claims["exp"], timezone.utc),
     )
     session.add(record)
@@ -126,7 +131,7 @@ def redeem(token: str, payload: EmbedSessionRequest, session: Session,
         session.rollback()
         raise ValueError("session token nonce has already been used") from error
     session.refresh(record)
-    return record
+    return record, credential
 
 
 def database_session(request: Request):
@@ -134,6 +139,26 @@ def database_session(request: Request):
         raise HTTPException(503, "Embed session storage is unavailable")
     with Session(request.app.state.engine) as session:
         yield session
+
+
+def require_embed_session(
+    authorization: str | None = Header(default=None),
+    session: Session = Depends(database_session),
+) -> EmbedSession:
+    prefix = "Session "
+    if not authorization or not authorization.startswith(prefix):
+        raise HTTPException(401, "Platform session required")
+    credential = authorization.removeprefix(prefix)
+    if not 32 <= len(credential) <= 128:
+        raise HTTPException(401, "Platform session is invalid")
+    digest = hashlib.sha256(credential.encode()).hexdigest()
+    record = session.scalar(select(EmbedSession).where(EmbedSession.credential_hash == digest))
+    expires = record.expires_at if record else None
+    if expires and expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if not record or not expires or expires <= datetime.now(timezone.utc):
+        raise HTTPException(401, "Platform session is expired")
+    return record
 
 
 @router.post("/api/v1/embed/session")
@@ -149,7 +174,7 @@ def create_embed_session(
     if not token or len(token) > 8192:
         raise HTTPException(401, "Embed session token is invalid")
     try:
-        record = redeem(token, payload, session)
+        record, credential = redeem(token, payload, session)
     except ValueError as error:
         detail = str(error)
         status = 409 if "already been used" in detail else 401
@@ -159,4 +184,5 @@ def create_embed_session(
         "session_id": record.id, "project": record.project_id,
         "environment": record.environment, "role": record.role,
         "expires_at": record.expires_at.isoformat(), "protocol": PROTOCOL,
+        "session_token": credential,
     }

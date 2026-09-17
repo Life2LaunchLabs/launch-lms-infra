@@ -18,6 +18,8 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Check shell syntax
         run: for script in deploy.sh setup.sh scripts/*.sh; do bash -n "$script"; done
+      - name: Build and smoke control-plane images
+        run: bash scripts/smoke-control-plane-images.sh
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

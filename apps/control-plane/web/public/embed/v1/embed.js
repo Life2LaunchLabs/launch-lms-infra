@@ -17,6 +17,7 @@
   let nonce = ''
   let context = {}
   let lastTrigger = null
+  let platformSession = ''
 
   function send(message) {
     if (port) port.postMessage(Object.assign({ nonce }, message))
@@ -81,8 +82,9 @@
     port = event.ports[0]
     port.onmessage = async portEvent => {
       const next = portEvent.data || {}
-      if (next.nonce !== nonce || next.protocol !== PROTOCOL) return
       if (next.type === 'launch-operations:v1:session') {
+        if (next.protocol !== PROTOCOL || !/^[0-9a-f-]{16,64}$/.test(next.nonce)) return
+        nonce = next.nonce
         const token = next.token
         next.token = undefined
         try {
@@ -92,7 +94,9 @@
             body: JSON.stringify({ nonce, protocol: PROTOCOL, parent_origin: parentOrigin }),
           })
           if (!response.ok) return unavailable('Project tools session unavailable')
-          await response.json()
+          const redeemed = await response.json()
+          platformSession = redeemed.session_token
+          if (typeof platformSession !== 'string' || platformSession.length < 32) return unavailable('Project tools session unavailable')
           renderContext(next.context)
           status.hidden = true
           toolbar.hidden = false
@@ -101,7 +105,8 @@
         } catch (_) {
           unavailable('Project tools unavailable')
         }
-      } else if (next.type === 'launch-operations:v1:context') renderContext(next.context)
+      } else if (next.nonce !== nonce || next.protocol !== PROTOCOL) return
+      else if (next.type === 'launch-operations:v1:context') renderContext(next.context)
       else if (next.type === 'launch-operations:v1:command' && next.command === 'open') openPanel(next.panel)
     }
     port.start()
