@@ -30,7 +30,7 @@ jobs:
           operations_ip="$(sed -n 's/^  expected_ipv4: //p' deploy/environments/launch-lms.yaml)"
           records="$(curl --fail --silent --show-error \
             --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
-            'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&name=%40&per_page=200')"
+            'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&per_page=200')"
           record="$(jq -cer '
             [.domain_records[] | select(.type == "A" and .name == "@")]
             | if length == 1 then .[0] else error("Expected exactly one operations apex A record") end
