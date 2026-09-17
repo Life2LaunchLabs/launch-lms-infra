@@ -16,6 +16,22 @@ jobs:
     environment: operations
     steps:
       - uses: actions/checkout@v6
+      - name: Verify DigitalOcean's existing operations apex A record
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          set -euo pipefail
+          expected_ip="$(sed -n 's/^  expected_ipv4: //p' deploy/environments/launch-lms.yaml)"
+          records="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+            'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&per_page=200')"
+          if ! jq -e --arg expected "$expected_ip" '
+            [.domain_records[] | select(.type == "A" and .name == "@")]
+            | if length == 1 and .[0].data == $expected then true else false end
+          ' <<<"$records" >/dev/null; then
+            echo 'Operations apex A record does not match the protected topology.' >&2
+            exit 1
+          fi
       - name: Install the pinned operations SSH identity
         env:
           SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}

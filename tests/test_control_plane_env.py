@@ -86,6 +86,14 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
         self.assertIn("Expected exactly one operations apex A record", rollback)
         self.assertIn("refusing rollback", rollback)
 
+    def test_public_deploy_checks_authoritative_record_and_exact_tls_host(self):
+        workflow = (ROOT / ".github/workflows/deploy-control-plane.yaml").read_text()
+        script = (ROOT / "scripts/deploy-control-plane.sh").read_text()
+        self.assertIn("DigitalOcean's existing operations apex A record", workflow)
+        self.assertIn('select(.type == "A" and .name == "@")', workflow)
+        self.assertIn("--require-operations-cutover --skip-dns", script)
+        self.assertIn('--resolve "${domain}:443:${expected_ip}"', script)
+
     def test_accepts_isolated_matching_runtime(self):
         control, postgres, resolver = runtime()
         MODULE.validate(control, postgres, resolver)
