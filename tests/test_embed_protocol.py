@@ -135,8 +135,12 @@ class EmbedProtocolTests(unittest.TestCase):
         self.assertNotIn("localStorage", loader + iframe)
         self.assertNotIn("sessionStorage", loader + iframe)
         self.assertIn("Authorization: `Bearer ${token}`", iframe)
+        self.assertIn("Authorization: `Session ${platformSession}`", iframe)
+        self.assertIn("/api/v1/embed/feedback", iframe)
+        self.assertIn("'Idempotency-Key'", iframe)
         self.assertIn("platformSession = redeemed.session_token", iframe)
         self.assertIn("event.origin !== parentOrigin", iframe)
+        self.assertIn("nonce: activeNonce", loader)
 
     def test_csp_distinguishes_operator_app_sdk_and_embed(self):
         caddy = (ROOT / "deploy/control-plane/Caddyfile").read_text()
