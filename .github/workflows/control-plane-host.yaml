@@ -14,7 +14,7 @@ on:
       action:
         description: Review or apply cloud/host state
         type: choice
-        options: [prepare-state, plan, adopt-plan, apply, configure, verify]
+        options: [prepare-state, inspect-apex, plan, adopt-plan, apply, configure, verify]
         default: plan
         required: true
       adopt_droplet_id:
@@ -65,6 +65,22 @@ jobs:
           ansible-playbook --syntax-check bootstrap.yml
           ansible-playbook --syntax-check verify.yml
           ansible-lint bootstrap.yml verify.yml
+
+  inspect-apex:
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'inspect-apex'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - name: List public apex A-record metadata from DigitalOcean
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+            'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&per_page=200' \
+            | jq '[.domain_records[] | select(.type == "A") | {id, name, data}]'
 
   prepare-state:
     if: github.event_name == 'workflow_dispatch' && inputs.action == 'prepare-state'
