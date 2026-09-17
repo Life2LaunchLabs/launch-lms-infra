@@ -32,6 +32,7 @@ class DeploymentTests(unittest.TestCase):
         script = (ROOT/'deploy/feedback-migration/run.sh').read_text()
         override = (ROOT/'deploy/feedback-migration/compose.yml').read_text()
         self.assertIn('environment: unstable', workflow)
+        self.assertIn('options: [audit, diagnose, apply]', workflow)
         self.assertIn('group: deploy-unstable', workflow)
         self.assertNotIn('deploy/feedback-migration', deployment_workflow)
         self.assertIn('[[ "$EXPECTED_DIGEST" =~ ^[0-9a-f]{64}$ ]]', workflow)
@@ -40,6 +41,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn('launch-lms:', override)
         self.assertIn('docker compose run --rm --no-deps -T', script)
         self.assertIn('deployed-release.json', script)
+        self.assertIn('feedback-diagnose.py:ro', script)
         self.assertIn('test "$DEPLOY_ENVIRONMENT" = unstable', script)
 
     def lock(self, branch='dev'):
