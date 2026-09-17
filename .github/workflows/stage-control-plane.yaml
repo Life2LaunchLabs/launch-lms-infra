@@ -31,11 +31,14 @@ jobs:
         env:
           CONTROL_PLANE_ENV: ${{ secrets.OPERATIONS_CONTROL_PLANE_ENV }}
           POSTGRES_ENV: ${{ secrets.OPERATIONS_POSTGRES_ENV }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.OPERATIONS_GITHUB_APP_PRIVATE_KEY }}
         run: |
-          test -n "$CONTROL_PLANE_ENV" && test -n "$POSTGRES_ENV"
+          test -n "$CONTROL_PLANE_ENV" && test -n "$POSTGRES_ENV" && test -n "$GITHUB_APP_PRIVATE_KEY"
           printf '%s\n' "$CONTROL_PLANE_ENV" > "$RUNNER_TEMP/launch-operations-secrets/control-plane.env"
           printf '%s\n' "$POSTGRES_ENV" > "$RUNNER_TEMP/launch-operations-secrets/postgres.env"
+          printf '%s\n' "$GITHUB_APP_PRIVATE_KEY" > "$RUNNER_TEMP/launch-operations-secrets/github-app.pem"
           chmod 0600 "$RUNNER_TEMP/launch-operations-secrets/"*.env
+          chmod 0600 "$RUNNER_TEMP/launch-operations-secrets/github-app.pem"
       - name: Transfer runtime files
         env:
           OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
@@ -43,6 +46,7 @@ jobs:
           scp -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes
           "$RUNNER_TEMP/launch-operations-secrets/control-plane.env"
           "$RUNNER_TEMP/launch-operations-secrets/postgres.env"
+          "$RUNNER_TEMP/launch-operations-secrets/github-app.pem"
           "root@${OPERATIONS_HOST}:/tmp/"
       - name: Stage exact protected revision without public Caddy
         env:
@@ -60,7 +64,8 @@ jobs:
           runuser -u launchops -- git checkout --detach "$INFRA_REVISION"
           install -m 0600 -o root -g root /tmp/control-plane.env /etc/launch-operations/control-plane.env
           install -m 0600 -o root -g root /tmp/postgres.env /etc/launch-operations/postgres.env
-          rm -f /tmp/control-plane.env /tmp/postgres.env
+          install -m 0400 -o 65532 -g 65532 /tmp/github-app.pem /etc/launch-operations/github-app-private-key.pem
+          rm -f /tmp/control-plane.env /tmp/postgres.env /tmp/github-app.pem
           bash scripts/stage-control-plane.sh
           test "$(git rev-parse HEAD)" = "$INFRA_REVISION"
           REMOTE

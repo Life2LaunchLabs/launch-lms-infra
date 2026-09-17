@@ -50,7 +50,7 @@ def main() -> None:
     print("The GitHub App private-key PEM must already be saved in a local file.")
     key_path = Path(plain("GitHub App private-key PEM file path")).expanduser()
     key = key_path.read_text(encoding="utf-8").strip()
-    if not key.startswith("-----BEGIN") or not key.endswith("-----END RSA PRIVATE KEY-----") and not key.endswith("-----END PRIVATE KEY-----"):
+    if not key.startswith("-----BEGIN") or not (key.endswith("-----END RSA PRIVATE KEY-----") or key.endswith("-----END PRIVATE KEY-----")):
         raise ValueError("The selected file is not a PEM private key")
     database_password = secrets.token_urlsafe(36)
     postgres = {"POSTGRES_USER": "operations", "POSTGRES_DB": "operations", "POSTGRES_PASSWORD": database_password}
@@ -66,7 +66,7 @@ def main() -> None:
         "GITHUB_OAUTH_CLIENT_SECRET": hidden("OAuth App client secret"),
         "GITHUB_APP_ID": plain("GitHub App ID"),
         "GITHUB_APP_INSTALLATION_ID": plain("GitHub App installation ID"),
-        "GITHUB_APP_PRIVATE_KEY": key.replace("\n", "\\n"),
+        "GITHUB_APP_PRIVATE_KEY_FILE": "/run/secrets/github-app-private-key",
         "GITHUB_ALLOWED_ORG": "Life2LaunchLabs",
         "GITHUB_ALLOWED_REPO": "Life2LaunchLabs/launch-lms",
         "SYMPHONY_STATUS_URL": "http://symphony:8788/api/v1/state",
@@ -86,6 +86,10 @@ def main() -> None:
         subprocess.run(["gh", "secret", "set", name, "--repo", repository, "--env", "operations"],
                        input=dotenv(values), text=True, check=True, stdout=subprocess.DEVNULL)
         print(f"Uploaded {name}.")
+    subprocess.run(["gh", "secret", "set", "OPERATIONS_GITHUB_APP_PRIVATE_KEY", "--repo", repository,
+                    "--env", "operations"], input=key + "\n", text=True, check=True,
+                   stdout=subprocess.DEVNULL)
+    print("Uploaded OPERATIONS_GITHUB_APP_PRIVATE_KEY.")
     print("Keep the PEM in your password manager or protected local vault; do not commit it.")
 
 

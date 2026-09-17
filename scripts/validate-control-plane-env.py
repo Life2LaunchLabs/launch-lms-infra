@@ -16,7 +16,7 @@ REQUIRED = (
     "OPERATIONS_DATABASE_URL", "OPERATIONS_PUBLIC_URL", "OPERATIONS_DOMAIN",
     "OPERATIONS_EXPECTED_IP", "OPERATIONS_SESSION_SECRET", "GITHUB_OAUTH_CLIENT_ID",
     "GITHUB_OAUTH_CLIENT_SECRET", "GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID",
-    "GITHUB_APP_PRIVATE_KEY", "GITHUB_ALLOWED_ORG", "GITHUB_ALLOWED_REPO",
+    "GITHUB_ALLOWED_ORG", "GITHUB_ALLOWED_REPO",
     "JIRA_BASE_URL", "JIRA_DELIVERY_EMAIL", "JIRA_DELIVERY_TOKEN",
     "JIRA_FEEDBACK_EMAIL", "JIRA_FEEDBACK_TOKEN",
 )
@@ -31,6 +31,8 @@ def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.
              topology: dict | None = None, check_dns: bool = True) -> None:
     missing = [name for name in REQUIRED if not control.get(name) or
                "CONFIGURE" in control[name] or "CHANGE_ME" in control[name]]
+    if not control.get("GITHUB_APP_PRIVATE_KEY") and control.get("GITHUB_APP_PRIVATE_KEY_FILE") != "/run/secrets/github-app-private-key":
+        missing.append("GITHUB_APP_PRIVATE_KEY_FILE")
     for name in ("POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD"):
         if not postgres.get(name) or "CHANGE_ME" in postgres[name] or "GENERATE" in postgres[name]:
             missing.append(name)

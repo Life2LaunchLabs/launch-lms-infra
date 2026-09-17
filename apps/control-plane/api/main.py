@@ -192,6 +192,6 @@ async def orchestration_status(_: dict = Depends(require_operator)) -> dict:
     except (httpx.HTTPError, ValueError) as error:
         raise HTTPException(503, "Orchestrator status is unavailable") from error
     try:
-        return sanitized_status(raw)
+        return sanitized_status(raw, load_project("launch-lms").data["tracker"]["site"])
     except ValueError as error:
         raise HTTPException(503, "Orchestrator status is unavailable") from error

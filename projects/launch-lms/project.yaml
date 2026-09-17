@@ -13,7 +13,7 @@ source:
     feedback: docs/product/feedback-policy.yaml
 tracker:
   provider: jira
-  site: life2launch.atlassian.net
+  site: henrydker.atlassian.net
   delivery_project: BOT
   feedback_project: FEED
   eligibility_label: symphony

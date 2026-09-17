@@ -19,6 +19,8 @@ services:
       dockerfile: apps/control-plane/api/Dockerfile
     restart: unless-stopped
     env_file: /etc/launch-operations/control-plane.env
+    volumes:
+      - /etc/launch-operations/github-app-private-key.pem:/run/secrets/github-app-private-key:ro
     depends_on:
       postgres: {condition: service_healthy}
     networks: [data, web, status]

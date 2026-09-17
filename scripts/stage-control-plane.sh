@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 test -s /etc/launch-operations/managed-host.json
 test "$(stat -c %a /etc/launch-operations/control-plane.env)" = 600
 test "$(stat -c %a /etc/launch-operations/postgres.env)" = 600
+test "$(stat -c %a /etc/launch-operations/github-app-private-key.pem)" = 400
 compose=(docker compose -f deploy/control-plane/compose.yaml)
 test -z "$("${compose[@]}" ps -q caddy)" || { echo 'Public Caddy is running during private stage' >&2; exit 1; }
 python3 scripts/validate-control-plane-env.py \

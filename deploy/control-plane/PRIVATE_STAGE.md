@@ -18,8 +18,9 @@ An operator can create the two files without hand-formatting them by running
 `python3 scripts/setup-operations-runtime.py` from a local infra checkout after
 creating the OAuth App and installing the GitHub App. It prompts for the PEM file
 and Jira/OAuth values, generates fresh PostgreSQL and session secrets, validates
-the DNS-independent topology, and uploads the two environment secrets directly
-through `gh`. It prints neither the values nor the generated files.
+the DNS-independent topology, and uploads the two environment secrets plus a
+separate `OPERATIONS_GITHUB_APP_PRIVATE_KEY` PEM secret directly through `gh`.
+It prints neither the values nor the generated files.
 
 Versioned SQL is under `postgres/`. The API image applies pending files in a
 single transaction before API startup and rejects a changed migration checksum.
