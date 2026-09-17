@@ -39,9 +39,11 @@ class StatusTests(unittest.TestCase):
         self.assertNotIn("workspace", str(value))
 
     def test_missing_generation_is_stale(self):
-        self.assertEqual(sanitized_status({"running": []})["availability"], "stale")
+        self.assertEqual(sanitized_status({"running": [], "retrying": [], "blocked": []})["availability"], "stale")
         with self.assertRaises(ValueError):
             sanitized_status(["unexpected"])
+        with self.assertRaises(ValueError):
+            sanitized_status({"generated_at": datetime.now(timezone.utc).isoformat()})
         with self.assertRaises(ValueError):
             sanitized_status({"generated_at": datetime.now(timezone.utc).isoformat(),
                               "error": {"code": "snapshot_timeout"}})

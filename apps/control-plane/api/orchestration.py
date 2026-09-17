@@ -51,7 +51,8 @@ def _rows(value: object, kind: str) -> list[dict]:
 
 
 def sanitized_status(raw: object) -> dict:
-    if not isinstance(raw, dict) or "error" in raw:
+    if (not isinstance(raw, dict) or "error" in raw
+            or any(not isinstance(raw.get(key), list) for key in ("running", "retrying", "blocked"))):
         raise ValueError("Invalid Symphony status response")
     observed_at = datetime.now(timezone.utc).isoformat()
     generated_at = _stamp(raw.get("generated_at"))
