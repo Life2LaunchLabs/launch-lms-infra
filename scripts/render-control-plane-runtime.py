@@ -45,7 +45,8 @@ def runtime(source: dict[str, str]) -> tuple[dict[str, str], dict[str, str], str
     if len(password) < 32 or not re.fullmatch(r"[A-Za-z0-9_-]+", password):
         raise ValueError("OPERATIONS_POSTGRES_PASSWORD must be at least 32 URL-safe characters")
     key = source.get("OPERATIONS_GITHUB_APP_PRIVATE_KEY", "").strip()
-    if not key.startswith("-----BEGIN ") or not key.endswith("-----END PRIVATE KEY-----"):
+    if not any(key.startswith(f"-----BEGIN {kind}-----") and
+               key.endswith(f"-----END {kind}-----") for kind in ("RSA PRIVATE KEY", "PRIVATE KEY")):
         raise ValueError("OPERATIONS_GITHUB_APP_PRIVATE_KEY must be a PEM private key")
     topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
     url = topology["operations"]["public_url"]

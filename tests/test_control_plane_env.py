@@ -69,6 +69,9 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
                     RENDER.runtime({**source, "OPERATIONS_POSTGRES_PASSWORD": bad})
         with self.assertRaisesRegex(ValueError, "single trimmed line"):
             RENDER.runtime({**source, "OPERATIONS_JIRA_DELIVERY_TOKEN": "token\nINJECTED=x"})
+        rsa = {**source, "OPERATIONS_GITHUB_APP_PRIVATE_KEY":
+               "-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----"}
+        self.assertEqual(RENDER.runtime(rsa)[2], rsa["OPERATIONS_GITHUB_APP_PRIVATE_KEY"])
 
     def test_operations_apex_adoption_is_repository_discovered(self):
         workflow = (ROOT / ".github/workflows/control-plane-host.yaml").read_text()
