@@ -68,4 +68,4 @@ class ReviewGateTests(unittest.TestCase):
         self.assertIn('active_states: ["To Do", "In Progress", "merge"]', workflow)
         self.assertIn('Never move an issue into Merge', workflow)
         self.assertIn('--match-head-commit <reviewed-sha>', workflow)
-        self.assertIn("s/^  active_states:.*/  active_states: []/", (ROOT / 'symphony/entrypoint.sh').read_text())
+        self.assertIn('render_args+=(--paused)', (ROOT / 'symphony/entrypoint.sh').read_text())
