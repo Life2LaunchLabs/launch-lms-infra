@@ -248,6 +248,28 @@ class OperationalSchemaTests(unittest.TestCase):
 
 
 class OperatorAuthTests(unittest.TestCase):
+    def test_installation_token_checks_repository_read_access(self):
+        from packages.connectors.github import GitHubConnector
+
+        def handler(request):
+            self.assertEqual(request.headers["authorization"], "Bearer installation-secret")
+            self.assertTrue(request.url.path.startswith("/repos/owner/repo/collaborators/"))
+            username = request.url.path.split("/")[-2]
+            if username == "missing":
+                return httpx.Response(404)
+            return httpx.Response(200, json={"permission": "read" if username == "reader" else "none"})
+
+        connector = GitHubConnector("installation-secret", "owner/repo", transport=httpx.MockTransport(handler))
+
+        async def exercise():
+            self.assertTrue(await connector.collaborator_has_read_access("owner/repo", "reader"))
+            self.assertFalse(await connector.collaborator_has_read_access("owner/repo", "missing"))
+            self.assertFalse(await connector.collaborator_has_read_access("owner/repo", "denied"))
+            with self.assertRaisesRegex(ValueError, "different repository"):
+                await connector.collaborator_has_read_access("owner/other", "reader")
+
+        asyncio.run(exercise())
+
     def test_session_is_signed_and_time_limited(self):
         auth = import_api_module("auth")
         config = import_api_module("config")

@@ -78,6 +78,21 @@ class GitHubConnector:
             response.raise_for_status()
             return response.json()
 
+    async def collaborator_has_read_access(self, repository: str, username: str) -> bool:
+        """Check current repository access using an installation-scoped token."""
+        self._require_repository(repository)
+        if not username or "/" in username:
+            raise ValueError("A GitHub username is required")
+        async with httpx.AsyncClient(timeout=30, transport=self.transport) as client:
+            response = await client.get(
+                f"{self.api_url}/repos/{repository}/collaborators/{username}/permission",
+                headers=self.headers(),
+            )
+            if response.status_code == 404:
+                return False
+            response.raise_for_status()
+            return response.json().get("permission") in {"read", "write", "admin"}
+
     def _require_repository(self, repository: str) -> None:
         if repository != self.repository:
             raise ValueError("Installation token is scoped to a different repository")
