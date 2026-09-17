@@ -80,6 +80,11 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
         self.assertIn("domains/life2launch.dev/records?type=A&name=%40", workflow)
         self.assertIn('select(.type == "A" and .name == "@" and .data == $expected)', workflow)
         self.assertIn("Expected exactly one legacy operations apex A record", workflow)
+        self.assertIn("Operations apex was rolled back", workflow)
+        self.assertIn("acknowledge_operations_rollback", workflow)
+        rollback = (ROOT / ".github/workflows/rollback-operations-apex.yaml").read_text()
+        self.assertIn("Expected exactly one operations apex A record", rollback)
+        self.assertIn("refusing rollback", rollback)
 
     def test_accepts_isolated_matching_runtime(self):
         control, postgres, resolver = runtime()
