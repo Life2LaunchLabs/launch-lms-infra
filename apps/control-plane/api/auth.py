@@ -11,6 +11,7 @@ import httpx
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from config import Settings
+from packages.connectors.github import GitHubAppCredentials
 
 
 COOKIE = "launch_operations_session"
@@ -56,9 +57,19 @@ async def exchange_and_authorize(settings: Settings, code: str, state: str, expe
         user = user_response.json()
         membership = await client.get(f"https://api.github.com/user/memberships/orgs/{settings.github_org}", headers=headers)
         organization_allowed = membership.status_code == 200 and membership.json().get("state") == "active"
-        repository = await client.get(f"https://api.github.com/repos/{settings.github_repo}", headers=headers)
-        permissions = repository.json().get("permissions", {}) if repository.status_code == 200 else {}
-        collaborator_allowed = any(permissions.get(name) for name in ("admin", "maintain", "push", "triage"))
+        collaborator_allowed = False
+        if not organization_allowed:
+            if not (settings.github_app_id and settings.github_installation_id and settings.github_app_private_key):
+                raise HTTPException(503, "Repository authorization is unavailable")
+            try:
+                connector = await GitHubAppCredentials(
+                    settings.github_app_id, settings.github_installation_id, settings.github_app_private_key
+                ).connector(settings.github_repo, {"metadata": "read"})
+                collaborator_allowed = await connector.collaborator_has_read_access(
+                    settings.github_repo, user["login"]
+                )
+            except (httpx.HTTPError, RuntimeError, ValueError) as error:
+                raise HTTPException(503, "Repository authorization is unavailable") from error
         if not organization_allowed and not collaborator_allowed:
             raise HTTPException(403, "Operator access requires approved organization membership or repository collaboration")
         return {"id": str(user["id"]), "login": user["login"], "avatar_url": user.get("avatar_url")}
