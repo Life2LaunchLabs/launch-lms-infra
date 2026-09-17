@@ -13,6 +13,11 @@ accepting the channel; the API separately verifies the signed token, exact nonce
 project/environment policy, and manifest-approved parent origin. Redeemed nonces
 are hashed and unique in PostgreSQL, so replay is rejected.
 
+The SDK renews the session over the established channel every three minutes with
+a fresh nonce. Each application JWT still expires within five minutes; redemption
+returns a new random platform credential whose hash and matching expiry are the
+only values persisted by the platform.
+
 The iframe owns its toolbar and panel. It reports only open/closed state to the
 SDK, which reserves the collapsed slot or promotes the container to a full-page
 overlay. Route, theme, viewport, organization, role, and release changes use

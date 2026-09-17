@@ -94,6 +94,10 @@ class ConnectorTests(unittest.TestCase):
         def handler(request):
             requests.append(request)
             if request.method == "POST" and request.url.path == "/rest/api/3/issue":
+                payload = json.loads(request.content)
+                self.assertEqual(payload["properties"], [{
+                    "key": "launch-operations", "value": {"environment": "unstable"},
+                }])
                 return httpx.Response(201, json={"key": "FEED-1"})
             if request.method == "PUT":
                 return httpx.Response(204)
@@ -110,7 +114,7 @@ class ConnectorTests(unittest.TestCase):
             {"launch-operations": {"environment": "unstable"}}, "operation-1",
         ))
         self.assertEqual(issue.key, "FEED-1")
-        self.assertEqual([request.method for request in requests], ["POST", "PUT", "GET"])
+        self.assertEqual([request.method for request in requests], ["POST", "GET"])
         self.assertTrue(all("secret-token" not in str(request.content) for request in requests))
 
     def test_jira_scoped_token_preserves_cloud_gateway_prefix(self):
@@ -191,6 +195,7 @@ class OperationalSchemaTests(unittest.TestCase):
         columns = {column["name"] for column in inspect(engine).get_columns("embed_sessions")}
         self.assertIn("parent_origin", columns)
         self.assertIn("role", columns)
+        self.assertIn("credential_hash", columns)
 
 
 class OperatorAuthTests(unittest.TestCase):
@@ -219,7 +224,17 @@ class OperatorAuthTests(unittest.TestCase):
 
     def test_control_plane_application_imports_with_public_health_route(self):
         main = import_api_module("main")
-        self.assertIn("/healthz", {route.path for route in main.app.routes})
+        paths = {route.path for route in main.app.routes}
+        self.assertIn("/healthz", paths)
+        self.assertIn("/api/v1/embed/session", paths)
+        self.assertIn("/api/v1/embed/feedback", paths)
+
+
+class ImageContractTests(unittest.TestCase):
+    def test_api_image_copies_every_runtime_package(self):
+        dockerfile = (ROOT / "apps/control-plane/api/Dockerfile").read_text()
+        for package in ("services", "packages", "projects", "apps/control-plane/api"):
+            self.assertIn(f"COPY {package}", dockerfile)
 
 
 if __name__ == "__main__":
