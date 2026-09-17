@@ -117,7 +117,10 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, os, pathlib
-          value = json.loads(os.environ['HOST_OBSERVATION'])
+          # ssh-action appends its own completion banner after the remote JSON line.
+          lines = os.environ['HOST_OBSERVATION'].splitlines()
+          assert lines and lines[0].startswith('{')
+          value = json.loads(lines[0])
           assert value['schema_version'] == 1 and value['environment'] == 'unstable'
           assert value['deploy_run_id'] == os.environ['DEPLOY_RUN_ID']
           assert value['deploy_run_attempt'] == os.environ['DEPLOY_RUN_ATTEMPT']
