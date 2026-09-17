@@ -67,7 +67,9 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
             with self.subTest(bad=bad):
                 with self.assertRaisesRegex(ValueError, "URL-safe"):
                     RENDER.runtime({**source, "OPERATIONS_POSTGRES_PASSWORD": bad})
-        with self.assertRaisesRegex(ValueError, "single trimmed line"):
+        self.assertEqual(RENDER.runtime({**source, "OPERATIONS_SESSION_SECRET": "\n" + "b" * 48 + " \n"})[0]
+                         ["OPERATIONS_SESSION_SECRET"], "b" * 48)
+        with self.assertRaisesRegex(ValueError, "multiple lines"):
             RENDER.runtime({**source, "OPERATIONS_JIRA_DELIVERY_TOKEN": "token\nINJECTED=x"})
         rsa = {**source, "OPERATIONS_GITHUB_APP_PRIVATE_KEY":
                "-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----"}
