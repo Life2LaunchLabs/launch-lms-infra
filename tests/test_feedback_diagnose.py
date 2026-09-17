@@ -24,6 +24,15 @@ class FakeJira:
 
 
 class FeedbackDiagnosisTests(unittest.TestCase):
+    def test_legacy_uuid_shape_is_sanitized(self):
+        self.assertEqual("missing", diagnose.legacy_uuid_shape(""))
+        self.assertEqual("non_string", diagnose.legacy_uuid_shape(123))
+        self.assertEqual("canonical_user_uuid", diagnose.legacy_uuid_shape(
+            "user_12345678-1234-4234-8234-123456789abc"
+        ))
+        self.assertEqual("user_prefix_non_uuid", diagnose.legacy_uuid_shape("user_old"))
+        self.assertEqual("other_nonempty_string", diagnose.legacy_uuid_shape("historical"))
+
     def test_inventory_search_paginates_all_feed_issues(self):
         issues = diagnose.all_feed_issues(FakeJira([
             {"issues": [{"key": "FEED-1"}], "isLast": False, "nextPageToken": "second"},
@@ -43,7 +52,7 @@ class FeedbackDiagnosisTests(unittest.TestCase):
     def test_missing_rows_are_classified_without_emitting_identity_values(self):
         issue = {"key": "FEED-1", "fields": {"labels": ["launchlms-feedback", "launchlms-org-2"]}}
         legacy = {"source": "unstable", "user_id": 7, "org_id": 2, "user_uuid": "private-uuid"}
-        self.assertEqual(["user_row_missing"], diagnose.classify(
+        self.assertEqual(["user_row_missing", "orphan_legacy_uuid_other_nonempty_string"], diagnose.classify(
             issue, legacy, None, SimpleNamespace(org_uuid="org-private")
         ))
         self.assertEqual(["organization_uuid_missing"], diagnose.classify(

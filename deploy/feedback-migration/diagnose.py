@@ -8,8 +8,25 @@ import json
 import os
 import re
 import sys
+from uuid import UUID
 
 ISSUE_KEY = re.compile(r"^FEED-[1-9][0-9]*$")
+
+
+def legacy_uuid_shape(value: object) -> str:
+    if value is None or value == "":
+        return "missing"
+    if not isinstance(value, str):
+        return "non_string"
+    if value.startswith("user_"):
+        suffix = value[5:]
+        try:
+            if str(UUID(suffix)) == suffix:
+                return "canonical_user_uuid"
+        except ValueError:
+            pass
+        return "user_prefix_non_uuid"
+    return "other_nonempty_string"
 
 
 def all_feed_issues(client) -> list[dict]:
@@ -55,6 +72,7 @@ def classify(issue: dict, legacy: object, user: object, org: object) -> list[str
         reasons.append("organization_label_mismatch")
     if not user:
         reasons.append("user_row_missing")
+        reasons.append("orphan_legacy_uuid_" + legacy_uuid_shape(legacy.get("user_uuid")))
     elif not user.user_uuid:
         reasons.append("user_uuid_missing")
     elif legacy.get("user_uuid") != user.user_uuid:
