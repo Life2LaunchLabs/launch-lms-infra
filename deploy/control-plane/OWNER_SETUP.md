@@ -46,7 +46,7 @@ In `Life2LaunchLabs/launch-lms-infra` → **Settings → Environments → operat
 | `OPERATIONS_JIRA_FEEDBACK_EMAIL` | FEED Jira account email. |
 | `OPERATIONS_JIRA_FEEDBACK_TOKEN` | FEED Jira account token, distinct from BOT's. |
 
-To rotate one value, replace its single Environment secret and rerun the protected stage or deployment workflow. The workflow assembles mode `0600` runtime files just before transfer. Its versioned topology supplies the fixed domain and host IP; there are no duplicate password fields to update.
+To rotate one value, replace its single Environment secret and rerun the protected stage or deployment workflow. The workflow trims accidental whitespace around single-line values, rejects embedded line breaks, and assembles mode `0600` runtime files just before transfer. Its versioned topology supplies the fixed domain and host IP; there are no duplicate password fields to update.
 
 ## After the repository gates are green
 

@@ -34,9 +34,9 @@ SECRET_MAP = {
 
 
 def required(source: dict[str, str], name: str) -> str:
-    value = source.get(name, "")
-    if not value or value != value.strip() or "\n" in value or "\r" in value:
-        raise ValueError(f"{name} is missing or is not a single trimmed line")
+    value = source.get(name, "").strip()
+    if not value or "\n" in value or "\r" in value:
+        raise ValueError(f"{name} is missing or contains multiple lines")
     return value
 
 
