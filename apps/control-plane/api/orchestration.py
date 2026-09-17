@@ -40,15 +40,18 @@ def _rows(value: object, kind: str) -> list[dict]:
             item.update(started_at=_stamp(row.get("started_at")),
                         last_event_at=_stamp(row.get("last_event_at")),
                         turns=_nonnegative(row.get("turn_count")))
-        else:
+        elif kind == "retrying":
             item.update(due_at=_stamp(row.get("due_at")), attempt=_nonnegative(row.get("attempt")),
                         reason="Retry scheduled" if row.get("error") else "Continuation scheduled")
+        else:
+            item.update(blocked_at=_stamp(row.get("blocked_at")),
+                        reason="Agent blocked; inspect the delivery issue")
         result.append(item)
     return result
 
 
 def sanitized_status(raw: object) -> dict:
-    if not isinstance(raw, dict):
+    if not isinstance(raw, dict) or "error" in raw:
         raise ValueError("Invalid Symphony status response")
     observed_at = datetime.now(timezone.utc).isoformat()
     generated_at = _stamp(raw.get("generated_at"))
@@ -58,6 +61,8 @@ def sanitized_status(raw: object) -> dict:
         stale = abs((datetime.now(timezone.utc) - generated).total_seconds()) > 120
     running = _rows(raw.get("running"), "running")
     retrying = _rows(raw.get("retrying"), "retrying")
+    blocked = _rows(raw.get("blocked"), "blocked")
     return {"availability": "stale" if stale else "live", "generated_at": generated_at,
             "observed_at": observed_at, "running": running, "retrying": retrying,
-            "counts": {"running": len(running), "retrying": len(retrying)}}
+            "blocked": blocked,
+            "counts": {"running": len(running), "retrying": len(retrying), "blocked": len(blocked)}}

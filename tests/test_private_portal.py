@@ -27,11 +27,14 @@ class StatusTests(unittest.TestCase):
                          "workspace": "/home/node/workspaces/secret", "tokens": {"total_tokens": 99}}],
             "retrying": [{"issue_identifier": "BOT-253", "attempt": 2,
                           "error": "credential leaked at /run/secrets/key"}],
+            "blocked": [{"issue_identifier": "BOT-205", "blocked_at": current,
+                         "error": "private /home/node/workspaces/secret"}],
             "rate_limits": {"private": "value"},
         })
         self.assertEqual(value["availability"], "live")
         self.assertEqual(value["running"][0]["issue_url"], "https://life2launch.atlassian.net/browse/BOT-205")
         self.assertEqual(value["retrying"][0]["reason"], "Retry scheduled")
+        self.assertEqual(value["blocked"][0]["reason"], "Agent blocked; inspect the delivery issue")
         self.assertNotIn("private", str(value))
         self.assertNotIn("workspace", str(value))
 
@@ -39,6 +42,9 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(sanitized_status({"running": []})["availability"], "stale")
         with self.assertRaises(ValueError):
             sanitized_status(["unexpected"])
+        with self.assertRaises(ValueError):
+            sanitized_status({"generated_at": datetime.now(timezone.utc).isoformat(),
+                              "error": {"code": "snapshot_timeout"}})
 
 
 class ReadOnlyTests(unittest.TestCase):

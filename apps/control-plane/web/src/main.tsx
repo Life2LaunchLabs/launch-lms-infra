@@ -4,8 +4,8 @@ import './styles.css'
 
 type Operator = { login: string }
 type Project = { display_name: string; repository: string; environments: Record<string, unknown> }
-type Work = { issue: string; issue_url: string; state: string; started_at?: string | null; last_event_at?: string | null; due_at?: string | null; turns?: number | null; attempt?: number | null; reason?: string }
-type Status = { availability: 'live' | 'stale'; generated_at: string | null; observed_at: string; counts: { running: number; retrying: number }; running: Work[]; retrying: Work[] }
+type Work = { issue: string; issue_url: string; state: string; started_at?: string | null; last_event_at?: string | null; due_at?: string | null; blocked_at?: string | null; turns?: number | null; attempt?: number | null; reason?: string }
+type Status = { availability: 'live' | 'stale'; generated_at: string | null; observed_at: string; counts: { running: number; retrying: number; blocked: number }; running: Work[]; retrying: Work[]; blocked: Work[] }
 
 function time(value?: string | null) {
   if (!value) return 'Time unavailable'
@@ -17,8 +17,8 @@ function WorkList({ items, empty }: { items: Work[]; empty: string }) {
   if (!items.length) return <p className="muted">{empty}</p>
   return <ul className="work-list">{items.map(item => <li key={`${item.state}-${item.issue}`}>
     <div><a href={item.issue_url} target="_blank" rel="noopener noreferrer">{item.issue} ↗</a><span className="badge">{item.state}</span></div>
-    <p>{item.state === 'running' ? `Started ${time(item.started_at)} · ${item.turns ?? 'Unknown'} turns` : `${item.reason ?? 'Retry scheduled'} · attempt ${item.attempt ?? 'unknown'}`}</p>
-    <small>{item.state === 'running' ? `Last event ${time(item.last_event_at)}` : `Due ${time(item.due_at)}`}</small>
+    <p>{item.state === 'running' ? `Started ${time(item.started_at)} · ${item.turns ?? 'Unknown'} turns` : item.state === 'retrying' ? `${item.reason ?? 'Retry scheduled'} · attempt ${item.attempt ?? 'unknown'}` : item.reason}</p>
+    <small>{item.state === 'running' ? `Last event ${time(item.last_event_at)}` : item.state === 'retrying' ? `Due ${time(item.due_at)}` : `Blocked ${time(item.blocked_at)}`}</small>
   </li>)}</ul>
 }
 
@@ -67,7 +67,7 @@ function App() {
       {project ? <p><a href={`https://github.com/${project.repository}`} target="_blank" rel="noopener noreferrer">{project.repository} ↗</a><span className="muted"> · {Object.keys(project.environments).join(' · ')}</span></p> : <p role="status">{projectError || 'Loading project…'}</p>}
     </section>
     <section aria-labelledby="agent-title"><div className="section-head"><div><p className="eyebrow">Agent</p><h2 id="agent-title">Symphony</h2></div><span className={`badge ${status?.availability === 'live' ? 'live' : 'warning'}`}>{status?.availability ?? 'Unavailable'}</span></div>
-      {statusError ? <p role="alert">{statusError}</p> : status ? <><p className="muted">Snapshot {time(status.generated_at)} · checked {time(status.observed_at)}{status.availability === 'stale' ? ' · Status may be out of date' : ''}</p><div className="columns"><div><h3>Running <span>{status.counts.running}</span></h3><WorkList items={status.running} empty="No active agent run is reported." /></div><div><h3>Retrying <span>{status.counts.retrying}</span></h3><WorkList items={status.retrying} empty="No retry is scheduled." /></div></div><p className="muted">Blocked work requires the delivery board or the future attempt journal; this snapshot does not prove a completed attempt.</p></> : <p role="status">Loading Symphony status…</p>}
+      {statusError ? <p role="alert">{statusError}</p> : status ? <><p className="muted">Snapshot {time(status.generated_at)} · checked {time(status.observed_at)}{status.availability === 'stale' ? ' · Status may be out of date' : ''}</p><div className="columns"><div><h3>Running <span>{status.counts.running}</span></h3><WorkList items={status.running} empty="No active agent run is reported." /></div><div><h3>Retrying <span>{status.counts.retrying}</span></h3><WorkList items={status.retrying} empty="No retry is scheduled." /></div><div><h3>Blocked <span>{status.counts.blocked}</span></h3><WorkList items={status.blocked} empty="No blocked agent run is reported." /></div></div><p className="muted">This live snapshot does not prove a completed attempt; historical evidence requires the attempt journal.</p></> : <p role="status">Loading Symphony status…</p>}
     </section>
     <section aria-labelledby="deployment-title"><div className="section-head"><div><p className="eyebrow">Deployment</p><h2 id="deployment-title">Verification</h2></div><span className="badge warning">Incomplete</span></div><p>Deployment is not attested. Candidate artifact, successful workflow run, and host-observed source SHA and image digest must agree before this view can report a deployment.</p><p className="muted">The protected infrastructure workflow remains the deployment authority.</p></section>
   </main>

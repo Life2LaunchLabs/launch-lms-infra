@@ -38,7 +38,7 @@ copies and a recorded restore drill before treating this as a recovery system.
 The design reference for the read-only portal is the existing operations shell
 in `apps/control-plane/web/src`, with the owner's September 17 delivery plan as
 the content and state brief. Review desktop 1440×900 and phone 390×844, including
-login, running, retrying, empty, stale, unavailable, keyboard focus, and long
+login, running, retrying, blocked, empty, stale, unavailable, keyboard focus, and long
 issue identifiers. A browser screenshot comparison and live OAuth/provider
 acceptance remain required before claiming UI handoff.
 
