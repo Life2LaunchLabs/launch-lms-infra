@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Project tools</title>
+    <link rel="stylesheet" href="/embed/v1/embed.css" />
+  </head>
+  <body>
+    <main id="operations-embed" aria-busy="true">
+      <div class="toolbar" role="toolbar" aria-label="Project tools" hidden>
+        <button type="button" data-panel="announcements">Announcements</button>
+        <button type="button" data-panel="releases">What's new</button>
+        <button type="button" data-panel="feedback">Feedback</button>
+      </div>
+      <section class="panel" role="dialog" aria-modal="true" aria-labelledby="panel-title" hidden>
+        <header><h1 id="panel-title">Project tools</h1><button type="button" class="close" aria-label="Close project tools">×</button></header>
+        <div class="content" tabindex="-1"></div>
+      </section>
+      <p class="status" role="status">Connecting project tools…</p>
+    </main>
+    <script src="/embed/v1/embed.js"></script>
+  </body>
+</html>

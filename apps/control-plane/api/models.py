@@ -32,6 +32,8 @@ class EmbedSession(Base):
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     opaque_user_id: Mapped[str] = mapped_column(String(128), nullable=False)
     opaque_org_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_origin: Mapped[str] = mapped_column(String(255), nullable=False)
     nonce_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

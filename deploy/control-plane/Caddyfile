@@ -1,10 +1,25 @@
 {$OPERATIONS_DOMAIN} {
-  encode zstd gzip
-  reverse_proxy control-plane-web:8080
-  header {
-    Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    X-Content-Type-Options nosniff
-    Referrer-Policy no-referrer
-    Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
-  }
+	encode zstd gzip
+	@embed path /embed/v1/*
+	handle @embed {
+		reverse_proxy control-plane-web:8080
+		header Content-Security-Policy "default-src 'self'; connect-src 'self'; frame-ancestors https://unstable.life2launch.app https://*.unstable.life2launch.app; object-src 'none'; base-uri 'none'"
+	}
+	@sdk path /sdk/v1/loader.js
+	handle @sdk {
+		reverse_proxy control-plane-web:8080
+		header Access-Control-Allow-Origin "*"
+		header Cross-Origin-Resource-Policy "cross-origin"
+		header Cache-Control "public, max-age=31536000, immutable"
+		header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+	}
+	handle {
+		reverse_proxy control-plane-web:8080
+		header Content-Security-Policy "default-src 'self'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'"
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+	}
 }

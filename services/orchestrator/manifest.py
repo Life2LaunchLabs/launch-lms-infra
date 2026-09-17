@@ -39,6 +39,11 @@ def load_project(project_id: str, root: Path = ROOT) -> ProjectManifest:
     path = root / "projects" / project_id / "project.yaml"
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     validate(data)
+    token = data["token_verification"]
+    for key_path in token["public_keys"].values():
+        resolved = (path.parent / key_path).resolve()
+        if path.parent.resolve() not in resolved.parents or not resolved.is_file():
+            raise ValueError("token public key must be a project-local file")
     return ProjectManifest(path=path, data=data)
 
 
@@ -78,6 +83,12 @@ def validate(data: Any) -> None:
     token = data.get("token_verification", {})
     if token.get("algorithm") != "EdDSA" or token.get("current_key_id") == token.get("next_key_id"):
         raise ValueError("EdDSA current and next key ids are required")
+    key_ids = {token.get("current_key_id"), token.get("next_key_id")}
+    public_keys = token.get("public_keys", {})
+    if set(public_keys) != key_ids:
+        raise ValueError("token public keys must contain exactly current and next key ids")
+    if any(not isinstance(path, str) or path.startswith(("/", "../")) for path in public_keys.values()):
+        raise ValueError("token public key paths must be project-relative")
     required_modules = {"orchestration", "feedback", "announcements", "release_notes", "deployment_observer", "planning"}
     if set(data.get("modules", {})) != required_modules:
         raise ValueError("module flags are incomplete")

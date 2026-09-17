@@ -42,6 +42,8 @@ class ManifestTests(unittest.TestCase):
         self.assertFalse(manifest.data["environments"]["production"]["embed_enabled"])
         self.assertEqual(manifest.data["tracker"]["statuses"]["approved"], "Merge")
         self.assertEqual(manifest.data["deployment"]["repository"], "Life2LaunchLabs/launch-lms-infra")
+        token = manifest.data["token_verification"]
+        self.assertEqual(set(token["public_keys"]), {token["current_key_id"], token["next_key_id"]})
 
     def test_manifest_rejects_missing_lifecycle(self):
         data = load_project("launch-lms").data.copy()
@@ -186,6 +188,9 @@ class OperationalSchemaTests(unittest.TestCase):
             set(inspect(engine).get_table_names()),
             {"projects", "embed_sessions", "unread_markers", "sync_cursors", "idempotency_records", "agent_runs", "deployment_observations", "announcements"},
         )
+        columns = {column["name"] for column in inspect(engine).get_columns("embed_sessions")}
+        self.assertIn("parent_origin", columns)
+        self.assertIn("role", columns)
 
 
 class OperatorAuthTests(unittest.TestCase):

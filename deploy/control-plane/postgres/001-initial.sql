@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS embed_sessions (
   environment varchar(32) NOT NULL,
   opaque_user_id varchar(128) NOT NULL,
   opaque_org_id varchar(128) NOT NULL,
+  role varchar(64) NOT NULL,
+  parent_origin varchar(255) NOT NULL,
   nonce_hash char(64) NOT NULL UNIQUE,
   expires_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
