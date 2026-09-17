@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 test -s /etc/launch-operations/managed-host.json
 compose=(docker compose -f docker-compose.symphony.yml -f deploy/control-plane/symphony.override.yml)
+docker network inspect launch-operations-status >/dev/null 2>&1 || docker network create launch-operations-status >/dev/null
 test -n "$("${compose[@]}" ps -aq symphony)"
 "${compose[@]}" exec -T symphony test -f /home/node/PAUSED
 "${compose[@]}" exec -T symphony mv /home/node/PAUSED /home/node/PAUSED.before-cutover

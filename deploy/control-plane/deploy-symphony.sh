@@ -9,6 +9,7 @@ test "$(stat -c %a /etc/launch-symphony/runner.env)" = 600
 test "$(stat -c %a /etc/launch-symphony/openai-api-key)" = 600
 
 compose=(docker compose -f docker-compose.symphony.yml -f deploy/control-plane/symphony.override.yml)
+docker network inspect launch-operations-status >/dev/null 2>&1 || docker network create launch-operations-status >/dev/null
 first_start=false
 if [[ -z "$("${compose[@]}" ps -aq symphony)" ]]; then
   first_start=true

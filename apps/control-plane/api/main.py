@@ -9,6 +9,7 @@ import sys
 
 import httpx
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine
@@ -26,6 +27,7 @@ from models import DeploymentObservation, Project  # noqa: E402
 from embed import router as embed_router  # noqa: E402
 from feedback import router as feedback_router  # noqa: E402
 from announcements import router as announcements_router  # noqa: E402
+from orchestration import sanitized_status  # noqa: E402
 
 
 @asynccontextmanager
@@ -48,6 +50,23 @@ app = FastAPI(title="Launch Operations", version="0.1.0", lifespan=lifespan)
 app.include_router(embed_router)
 app.include_router(feedback_router)
 app.include_router(announcements_router)
+
+
+class ReadOnlyMiddleware:
+    def __init__(self, wrapped):
+        self.wrapped = wrapped
+
+    async def __call__(self, scope, receive, send):
+        if (scope["type"] == "http" and scope["app"].state.settings.read_only
+                and scope["path"].startswith("/api/v1/")
+                and scope["method"] not in {"GET", "HEAD", "OPTIONS"}
+                and scope["path"] != "/api/v1/auth/logout"):
+            await JSONResponse({"detail": "Operations are read-only"}, status_code=403)(scope, receive, send)
+            return
+        await self.wrapped(scope, receive, send)
+
+
+app.add_middleware(ReadOnlyMiddleware)
 
 
 class CandidateDispatch(BaseModel):
@@ -95,8 +114,9 @@ async def github_callback(code: str, state: str, launch_operations_oauth: str | 
 
 
 @app.post("/api/v1/auth/logout", status_code=204, response_class=Response)
-def logout(response: Response):
+async def logout(response: Response):
     response.delete_cookie(COOKIE, path="/")
+    response.status_code = 204
     return response
 
 
@@ -171,5 +191,7 @@ async def orchestration_status(_: dict = Depends(require_operator)) -> dict:
             raw = response.json()
     except (httpx.HTTPError, ValueError) as error:
         raise HTTPException(503, "Orchestrator status is unavailable") from error
-    allowed = ("status", "paused", "running", "queued", "updated_at")
-    return {key: raw[key] for key in allowed if key in raw}
+    try:
+        return sanitized_status(raw)
+    except ValueError as error:
+        raise HTTPException(503, "Orchestrator status is unavailable") from error

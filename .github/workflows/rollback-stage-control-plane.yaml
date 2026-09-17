@@ -1,0 +1,43 @@
+name: Roll back private control-plane stage
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-control-plane
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Stop only privately staged services
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+        run: |
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd /opt/launch-operations
+          exec 9>/var/lock/launch-operations-deploy.lock
+          flock -w 900 9
+          compose=(docker compose -f deploy/control-plane/compose.yaml)
+          test -z "$("${compose[@]}" ps -q caddy)" || { echo 'Public Caddy is running; private-stage rollback is unavailable' >&2; exit 1; }
+          "${compose[@]}" stop control-plane-web control-plane-api postgres
+          echo 'Private portal stopped; database volume and Symphony worker retained.'
+          REMOTE

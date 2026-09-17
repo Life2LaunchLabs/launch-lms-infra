@@ -13,6 +13,9 @@ python3 scripts/validate-control-plane-env.py \
   --topology deploy/environments/launch-lms.yaml --require-operations-cutover
 
 docker compose -f deploy/control-plane/compose.yaml config --quiet
+docker network inspect launch-operations-status >/dev/null
+docker compose -f deploy/control-plane/compose.yaml up -d --wait --wait-timeout 240 postgres
+docker compose -f deploy/control-plane/compose.yaml run --rm --build --no-deps control-plane-api python migrate.py
 docker compose -f deploy/control-plane/compose.yaml up -d --build --wait --wait-timeout 300
 
 domain="$(python3 - <<'PY'
