@@ -25,6 +25,7 @@ from config import Settings  # noqa: E402
 from models import DeploymentObservation, Project  # noqa: E402
 from embed import router as embed_router  # noqa: E402
 from feedback import router as feedback_router  # noqa: E402
+from announcements import router as announcements_router  # noqa: E402
 
 
 @asynccontextmanager
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Launch Operations", version="0.1.0", lifespan=lifespan)
 app.include_router(embed_router)
 app.include_router(feedback_router)
+app.include_router(announcements_router)
 
 
 class CandidateDispatch(BaseModel):
