@@ -63,9 +63,10 @@ the database URL from the single PostgreSQL password and uses versioned
 topology for the public URL and expected host IP.
 
 Deployment refuses placeholders, short session secrets, mismatched database
-credentials, non-production mode, non-HTTPS public URLs, and DNS that does not
-resolve the configured domain to the expected host. Only then does it build/start
-Compose and verify public HTTPS. The workflow is manual until backup/restore and
+credentials, non-production mode, non-HTTPS public URLs, and a DigitalOcean apex
+A record that does not target the expected host. It builds/starts Compose and
+verifies public HTTPS against the exact operations IP, avoiding stale recursive
+DNS answers during propagation. The workflow is manual until backup/restore and
 deployment observation have completed their first live acceptance cycle.
 
 Symphony can be staged before public control-plane DNS. The protected

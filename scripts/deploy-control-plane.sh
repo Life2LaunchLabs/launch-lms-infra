@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 
 python3 scripts/validate-control-plane-env.py \
   /etc/launch-operations/control-plane.env /etc/launch-operations/postgres.env \
-  --topology deploy/environments/launch-lms.yaml --require-operations-cutover
+  --topology deploy/environments/launch-lms.yaml --require-operations-cutover --skip-dns
 
 docker compose -f deploy/control-plane/compose.yaml config --quiet
 docker network inspect launch-operations-status >/dev/null
@@ -28,7 +28,9 @@ from env_file import read_env
 print(read_env(Path('/etc/launch-operations/control-plane.env'))['OPERATIONS_DOMAIN'])
 PY
 )"
-curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 "https://${domain}/" >/dev/null
+expected_ip="$(sed -n 's/^OPERATIONS_EXPECTED_IP=//p' /etc/launch-operations/control-plane.env)"
+curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
+  --resolve "${domain}:443:${expected_ip}" "https://${domain}/" >/dev/null
 
 install -d -m 0700 /var/lib/launch-operations
 python3 - "$domain" <<'PY'
