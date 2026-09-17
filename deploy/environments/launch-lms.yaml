@@ -24,6 +24,9 @@ application:
     cutover_evidence:
       tls_preflight_run_id: "35158254462"
       verified_path: /.well-known/launch-lms-domain-preflight
+      live_verification_run_id: "35185623351"
+      app_commit: 9cfe46e6b4c8758e74b8ef9d5b8dab4a2b89bfce
+      infra_commit: c44a0503a8dab8027a9984aaf853676eb4d663e1
 
 dns:
   app_zone: life2launch.app
