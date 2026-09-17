@@ -36,7 +36,12 @@ dns:
     operations: "@"
     unstable_apex: unstable
     unstable_wildcard: "*.unstable"
-  # The old unstable service still uses the .dev apex. Change this only after
-  # the nested unstable hostname has passed its cutover checks; control-plane
-  # deployment is gated on the same value.
-  operations_apex_cutover: false
+  # Private stage, backup restore, GitHub App access, and live Symphony status
+  # passed on the protected operations host before the apex move.
+  operations_apex_cutover: true
+  operations_cutover_evidence:
+    stage_run_id: "35279169152"
+    stage_infra_commit: abe68a47e20d75b6686d5a79daf6e183371f8a73
+    backup_restore_run_id: "35277952462"
+    github_app_run_id: "35279297070"
+    symphony_status_run_id: "35278234990"

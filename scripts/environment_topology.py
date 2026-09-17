@@ -95,3 +95,10 @@ def validate_topology(value: object) -> None:
         raise ValueError("operations apex cutover must be an explicit boolean")
     if dns["operations_apex_cutover"] and not unstable["cutover_approved"]:
         raise ValueError("operations apex cutover requires approved nested unstable")
+    if dns["operations_apex_cutover"]:
+        evidence = dns.get("operations_cutover_evidence", {})
+        for field in ("stage_run_id", "backup_restore_run_id", "github_app_run_id", "symphony_status_run_id"):
+            if not str(evidence.get(field, "")).isdigit():
+                raise ValueError(f"operations apex cutover requires {field}")
+        if not re.fullmatch(r"[a-f0-9]{40}", str(evidence.get("stage_infra_commit", ""))):
+            raise ValueError("operations apex cutover requires exact staged infra commit")
