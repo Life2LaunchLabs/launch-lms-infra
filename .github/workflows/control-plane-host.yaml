@@ -169,11 +169,12 @@ jobs:
           if tofu state show 'digitalocean_record.operations_apex[0]' >/dev/null 2>&1; then
             if grep -Eq '^  operations_apex_cutover: true$' ../../environments/launch-lms.yaml; then
               LEGACY_IP="$(sed -n 's/^  unstable_ipv4: //p' ../../environments/launch-lms.yaml)"
+              # DigitalOcean's name=@ query returned no apex record; filter the A list locally.
               CURRENT="$(curl --fail --silent --show-error \
                 --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
-                'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&name=%40&per_page=200')"
+                'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&per_page=200')"
               if jq -e --arg expected "$LEGACY_IP" \
-                '[.domain_records[] | select(.type == "A" and .name == "@" and .data == $expected)] | length == 1' \
+                '[.domain_records[] | select(.type == "A" and .name == "@")] | if length == 1 and .[0].data == $expected then true else false end' \
                 <<<"$CURRENT" >/dev/null; then
                 if [ '${{ inputs.acknowledge_operations_rollback }}' != 'true' ]; then
                   echo 'Operations apex was rolled back. A fresh apply requires explicit rollback acknowledgement.' >&2
@@ -188,10 +189,10 @@ jobs:
               LEGACY_IP="$(sed -n 's/^  unstable_ipv4: //p' ../../environments/launch-lms.yaml)"
               RECORDS="$(curl --fail --silent --show-error \
                 --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
-                'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&name=%40&per_page=200')"
+                'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&per_page=200')"
               APEX_RECORD_ID="$(jq -er --arg expected "$LEGACY_IP" '
-                [.domain_records[] | select(.type == "A" and .name == "@" and .data == $expected)]
-                | if length == 1 then .[0].id
+                [.domain_records[] | select(.type == "A" and .name == "@")]
+                | if length == 1 and .[0].data == $expected then .[0].id
                   else error("Expected exactly one legacy operations apex A record") end
               ' <<<"$RECORDS")"
             fi

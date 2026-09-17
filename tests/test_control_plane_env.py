@@ -77,8 +77,8 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
 
     def test_operations_apex_adoption_is_repository_discovered(self):
         workflow = (ROOT / ".github/workflows/control-plane-host.yaml").read_text()
-        self.assertIn("domains/life2launch.dev/records?type=A&name=%40", workflow)
-        self.assertIn('select(.type == "A" and .name == "@" and .data == $expected)', workflow)
+        self.assertIn("domains/life2launch.dev/records?type=A&per_page=200", workflow)
+        self.assertIn('select(.type == "A" and .name == "@")', workflow)
         self.assertIn("Expected exactly one legacy operations apex A record", workflow)
         self.assertIn("Operations apex was rolled back", workflow)
         self.assertIn("acknowledge_operations_rollback", workflow)
