@@ -133,6 +133,55 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(seen[0].url.host, "api.atlassian.com")
         self.assertEqual(seen[0].url.path, "/ex/jira/cloud-123/rest/api/3/issue/FEED-1/comment")
 
+    def test_jira_comment_history_follows_pagination(self):
+        from packages.connectors.jira import JiraAdapter, JiraCredentials
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            start = int(request.url.params["startAt"])
+            return httpx.Response(200, json={
+                "comments": [{"id": str(start + 1)}], "total": 2,
+            })
+
+        adapter = JiraAdapter(
+            JiraCredentials("https://jira.example", "feed@example.test", "token"),
+            httpx.MockTransport(handler),
+        )
+        self.assertEqual(
+            [value["id"] for value in asyncio.run(adapter.comments("FEED-1"))],
+            ["1", "2"],
+        )
+        self.assertEqual([request.url.params["startAt"] for request in seen], ["0", "1"])
+
+    def test_jira_issue_history_follows_enhanced_search_pagination(self):
+        from packages.connectors.jira import JiraAdapter, JiraCredentials
+        seen = []
+
+        def handler(request):
+            seen.append(request)
+            token = request.url.params.get("nextPageToken")
+            issue = {
+                "key": "FEED-2" if token else "FEED-1",
+                "fields": {"summary": "Feedback", "status": {"name": "Open"}, "updated": token or "r1"},
+                "properties": {"launch-operations": {"project": "launch-lms"}},
+            }
+            if token:
+                return httpx.Response(200, json={"issues": [issue], "isLast": True})
+            return httpx.Response(200, json={"issues": [issue], "nextPageToken": "page-2", "isLast": False})
+
+        adapter = JiraAdapter(
+            JiraCredentials("https://jira.example", "feed@example.test", "token"),
+            httpx.MockTransport(handler),
+        )
+        issues = asyncio.run(adapter.list_issues("FEED"))
+        self.assertEqual([issue.key for issue in issues], ["FEED-1", "FEED-2"])
+        self.assertEqual(seen[1].url.params["nextPageToken"], "page-2")
+        self.assertEqual(seen[0].url.path, "/rest/api/3/search/jql")
+
+        with self.assertRaisesRegex(ValueError, "project key"):
+            asyncio.run(adapter.list_issues("FEED OR project = BOT"))
+
     def test_jira_rejects_gateway_without_cloud_id(self):
         from packages.connectors.jira import JiraAdapter, JiraCredentials
 
