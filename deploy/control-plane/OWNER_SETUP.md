@@ -2,14 +2,15 @@
 
 This is the small set of account-level inputs the repository cannot create for you. Do **not** paste tokens, private keys, or complete environment files into a PR, issue, chat, or this document. Keep `life2launch.dev` pointed at the existing unstable host until the nested unstable deployment has been tested and the reviewed cutover gate is enabled.
 
-## Live checkpoint — 2026-09-16
+## Live checkpoint — 2026-09-17
 
 - State bucket preparation/versioning succeeded in [run 35146626233](https://github.com/Life2LaunchLabs/launch-lms-infra/actions/runs/35146626233). The temporary full-access Spaces key has been revoked in DigitalOcean and its two GitHub Environment secrets removed; only the bucket-scoped state key remains.
 - The existing operations Droplet `601077988` was adopted into versioned remote state without replacement. [Cloud apply 35149808494](https://github.com/Life2LaunchLabs/launch-lms-infra/actions/runs/35149808494) created its firewall and dedicated project after the nested DNS records were created in the preceding partial apply. The [follow-up plan](https://github.com/Life2LaunchLabs/launch-lms-infra/actions/runs/35149910044) reported **No changes**.
 - [Host configuration](https://github.com/Life2LaunchLabs/launch-lms-infra/actions/runs/35151083811) and the separate [host verification](https://github.com/Life2LaunchLabs/launch-lms-infra/actions/runs/35151695299) passed. The host is configured but the control-plane services have **not** been started.
-- `unstable.life2launch.app` and `life2launch.unstable.life2launch.app` resolve to the existing unstable server `137.184.34.50`; `life2launch.dev` still resolves to that server. The nested hostname does **not** yet serve valid TLS. Do not use it for tester traffic or switch the `.dev` apex yet.
+- `unstable.life2launch.app` and `life2launch.unstable.life2launch.app` resolve to the existing unstable server `137.184.34.50`. The guarded [nested cutover run 35185623351](https://github.com/Life2LaunchLabs/launch-lms-infra/actions/runs/35185623351) passed public TLS/routing plus live login, one-use handoff, replay rejection, legacy-cookie expiry, host isolation, and logout against Launch LMS `9cfe46e6b4c8758e74b8ef9d5b8dab4a2b89bfce` and infra `c44a0503a8dab8027a9984aaf853676eb4d663e1`.
+- `life2launch.dev` still resolves to the unstable server and now redirects to `unstable.life2launch.app`. The operations host remains configured but the control-plane services have not been started.
 
-Next gate: deploy and verify the host-only Launch LMS session handoff, legacy-cookie expiry, nested TLS, and real browser scenarios described in `deploy/environments/README.md`. Only after that evidence is reviewed can the nested unstable and then `.dev` apex gates be approved in separate PRs. The `operations` Environment is also still missing `OPERATIONS_POSTGRES_ENV` and `OPERATIONS_CONTROL_PLANE_ENV`; prepare these from the examples before the eventual service deployment. The GitHub App below is needed for the control-plane runtime, not for host configuration. No new DigitalOcean token or Spaces key is requested.
+Next gate: complete owner browser acceptance on the nested unstable hostname, create the least-privilege GitHub App described below, and add `OPERATIONS_POSTGRES_ENV` and `OPERATIONS_CONTROL_PLANE_ENV` from the examples. Then approve the `.dev` apex gate in a separate PR, adopt and move its existing DNS record through the protected host workflow, and deploy the control plane. No new DigitalOcean token or Spaces key is requested.
 
 ## Do now
 

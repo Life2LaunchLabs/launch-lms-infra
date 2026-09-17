@@ -84,3 +84,16 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
         unsafe["application"]["unstable"]["cutover_approved"] = True
         with self.assertRaisesRegex(ValueError, "session handoff"):
             validate_topology(unsafe)
+
+    def test_nested_cutover_requires_live_revision_evidence(self):
+        topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
+        for field, message in (
+            ("live_verification_run_id", "live verification run ID"),
+            ("app_commit", "exact app commit"),
+            ("infra_commit", "exact infra commit"),
+        ):
+            with self.subTest(field=field):
+                unsafe = deepcopy(topology)
+                del unsafe["application"]["unstable"]["cutover_evidence"][field]
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_topology(unsafe)

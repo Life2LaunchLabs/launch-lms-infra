@@ -61,6 +61,13 @@ def validate_topology(value: object) -> None:
             raise ValueError("nested unstable cutover requires a TLS preflight run ID")
         if evidence.get("verified_path") != "/.well-known/launch-lms-domain-preflight":
             raise ValueError("nested unstable cutover requires the canonical preflight path")
+        if not str(evidence.get("live_verification_run_id", "")).isdigit():
+            raise ValueError("nested unstable cutover requires a live verification run ID")
+        for revision in ("app_commit", "infra_commit"):
+            if not re.fullmatch(r"[0-9a-f]{40}", str(evidence.get(revision, ""))):
+                raise ValueError(
+                    f"nested unstable cutover requires an exact {revision.replace('_', ' ')}"
+                )
     production_domain = production.get("base_domain", "")
     unstable_domain = unstable.get("base_domain", "")
     if not HOST.fullmatch(production_domain) or not HOST.fullmatch(unstable_domain):
