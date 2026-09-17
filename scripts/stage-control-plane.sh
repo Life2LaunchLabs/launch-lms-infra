@@ -39,4 +39,4 @@ else:
     raise AssertionError('Read-only write gate did not reject an embed write')
 PY
 "${compose[@]}" exec -T control-plane-web wget -qO- http://127.0.0.1:8080/ >/dev/null
-echo "Private control-plane stage healthy at $(git rev-parse HEAD)."
+echo "Private control-plane stage healthy at $(runuser -u launchops -- git rev-parse HEAD)."
