@@ -1,0 +1,47 @@
+name: Verify private control-plane backup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-control-plane
+  cancel-in-progress: false
+
+jobs:
+  backup-restore:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - name: Install the pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Create a protected backup and restore into a disconnected database
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+          BACKUP_RUN_ID: ${{ github.run_id }}
+        run: |
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            "BACKUP_RUN_ID=${BACKUP_RUN_ID} bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/launch-operations
+          exec 9>/var/lock/launch-operations-deploy.lock
+          flock -w 900 9
+          test -s /etc/launch-operations/postgres.env
+          test -n "$(docker compose -f deploy/control-plane/compose.yaml ps -q postgres)"
+          backup="/var/backups/launch-operations/operations-${BACKUP_RUN_ID}.dump"
+          bash scripts/operations-db.sh backup "$backup"
+          bash scripts/operations-db.sh restore-test "$backup"
+          test "$(stat -c %a "$backup")" = 600
+          echo "Backup and disconnected restore verified at $(git rev-parse HEAD)."
+          REMOTE

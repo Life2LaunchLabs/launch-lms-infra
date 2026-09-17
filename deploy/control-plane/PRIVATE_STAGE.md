@@ -22,8 +22,10 @@ rerunning the protected stage or deployment workflow.
 
 Versioned SQL is under `postgres/`. The API image applies pending files in a
 single transaction before API startup and rejects a changed migration checksum.
-The first migration is safe for a previously initialized database. For a local
-protected database backup on the host:
+The first migration is safe for a previously initialized database. Dispatch
+the protected `Verify private control-plane backup` workflow after staging;
+it makes a mode `0600` local backup and restores it into a disconnected database.
+For a manual repeat on the host:
 
 ```bash
 bash scripts/operations-db.sh backup /var/backups/launch-operations/operations-YYYYMMDD.dump
