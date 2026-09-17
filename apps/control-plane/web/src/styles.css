@@ -11,6 +11,7 @@ h3 span { color: #60766a; font-size: .85rem; }
 p { line-height: 1.5; }
 a { color: #165c38; font-weight: 700; text-underline-offset: 3px; }
 a:hover { color: #0b3923; }
+code { overflow-wrap: anywhere; }
 .eyebrow { color: #38664a; font-size: .76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; margin: 0 0 12px; }
 .lead { color: #53665a; margin: 0; max-width: 650px; }
 .muted, small { color: #627368; }
