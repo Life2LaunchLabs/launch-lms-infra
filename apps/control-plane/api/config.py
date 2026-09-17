@@ -1,7 +1,15 @@
 """Environment-only control-plane configuration."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
+from pathlib import Path
+
+
+def app_private_key() -> str:
+    path = os.getenv("GITHUB_APP_PRIVATE_KEY_FILE")
+    if path:
+        return Path(path).read_text(encoding="utf-8")
+    return os.getenv("GITHUB_APP_PRIVATE_KEY", "")
 
 
 @dataclass(frozen=True)
@@ -14,7 +22,7 @@ class Settings:
     github_repo: str = os.getenv("GITHUB_ALLOWED_REPO", "Life2LaunchLabs/launch-lms")
     github_app_id: str = os.getenv("GITHUB_APP_ID", "")
     github_installation_id: str = os.getenv("GITHUB_APP_INSTALLATION_ID", "")
-    github_app_private_key: str = os.getenv("GITHUB_APP_PRIVATE_KEY", "")
+    github_app_private_key: str = field(default_factory=app_private_key, repr=False)
     jira_base_url: str = os.getenv("JIRA_BASE_URL", "")
     jira_delivery_email: str = os.getenv("JIRA_DELIVERY_EMAIL", "")
     jira_delivery_token: str = os.getenv("JIRA_DELIVERY_TOKEN", "")

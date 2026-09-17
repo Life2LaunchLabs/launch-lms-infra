@@ -5,8 +5,10 @@ cd "$(dirname "$0")/.."
 [[ -f /etc/launch-operations/managed-host.json ]] || { echo 'Host is not repository-managed' >&2; exit 1; }
 [[ -s /etc/launch-operations/control-plane.env ]] || { echo 'Missing control-plane environment' >&2; exit 1; }
 [[ -s /etc/launch-operations/postgres.env ]] || { echo 'Missing PostgreSQL environment' >&2; exit 1; }
+[[ -s /etc/launch-operations/github-app-private-key.pem ]] || { echo 'Missing GitHub App private key' >&2; exit 1; }
 [[ "$(stat -c '%a' /etc/launch-operations/control-plane.env)" == 600 ]] || { echo 'Unsafe control-plane environment mode' >&2; exit 1; }
 [[ "$(stat -c '%a' /etc/launch-operations/postgres.env)" == 600 ]] || { echo 'Unsafe PostgreSQL environment mode' >&2; exit 1; }
+[[ "$(stat -c '%a' /etc/launch-operations/github-app-private-key.pem)" == 400 ]] || { echo 'Unsafe GitHub App private-key mode' >&2; exit 1; }
 
 python3 scripts/validate-control-plane-env.py \
   /etc/launch-operations/control-plane.env /etc/launch-operations/postgres.env \
