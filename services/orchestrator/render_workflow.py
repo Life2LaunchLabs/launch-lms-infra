@@ -30,7 +30,7 @@ def fetch_policy(repository: str, path: str, commit: str, token: str | None = No
         return response.read()
 
 
-def render(project_id: str, commit: str, policy: bytes) -> tuple[str, dict[str, str]]:
+def render(project_id: str, commit: str, policy: bytes, *, paused: bool = False) -> tuple[str, dict[str, str]]:
     manifest = load_project(project_id)
     require_sha(commit)
     runtime_path = ROOT / "services" / "orchestrator" / "runtime.yaml"
@@ -49,7 +49,7 @@ def render(project_id: str, commit: str, policy: bytes) -> tuple[str, dict[str, 
             "api_token": "$JIRA_API_TOKEN", "project_key": data["tracker"]["delivery_project"],
         },
         "required_labels": [data["tracker"]["eligibility_label"]],
-        "active_states": [statuses["ready"], statuses["active"], statuses["approved"].lower()],
+        "active_states": [] if paused else [statuses["ready"], statuses["active"], statuses["approved"].lower()],
         "terminal_states": [statuses["complete"]],
     }
     runtime["hooks"]["after_create"] = (
@@ -86,12 +86,13 @@ def main() -> None:
     parser.add_argument("--policy-file", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--metadata", type=Path, required=True)
+    parser.add_argument("--paused", action="store_true", help="Render with no dispatchable tracker states")
     args = parser.parse_args()
     manifest = load_project(args.project)
     policy = args.policy_file.read_bytes() if args.policy_file else fetch_policy(
         manifest.repository, manifest.workflow_path, args.commit, os.environ.get("GITHUB_TOKEN")
     )
-    body, metadata = render(args.project, args.commit, policy)
+    body, metadata = render(args.project, args.commit, policy, paused=args.paused)
     args.output.write_text(body, encoding="utf-8")
     args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
 
