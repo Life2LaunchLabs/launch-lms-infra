@@ -1,0 +1,84 @@
+name: Cut over Symphony to operations host
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: symphony-host-cutover
+  cancel-in-progress: false
+
+jobs:
+  pause-and-preserve-legacy:
+    runs-on: ubuntu-latest
+    environment: unstable
+    steps:
+      - name: Stop the idle legacy worker and save its complete home volume
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          command_timeout: 20m
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            exec 9>.deploy.lock
+            flock -w 1200 9
+            test "$(cat .deployment-environment)" = unstable
+            test -f /etc/launch-symphony/ENABLED
+            volume_path="$(docker volume inspect launch-symphony_symphony-home --format '{{.Mountpoint}}')"
+            test -d "$volume_path/workspaces"
+            test -z "$(find "$volume_path/workspaces" -mindepth 1 -maxdepth 1 -print -quit)" || {
+              echo 'Legacy workspaces are not empty; aborting unattended cutover' >&2
+              exit 1
+            }
+            docker compose -f docker-compose.symphony.yml exec -T symphony touch /home/node/PAUSED
+            docker compose -f docker-compose.symphony.yml stop symphony
+            mkdir -p /var/backups/launch-symphony
+            chmod 0700 /var/backups/launch-symphony
+            backup="/var/backups/launch-symphony/symphony-home-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+            tar -C "$volume_path" -czf "$backup" .
+            chmod 0600 "$backup"
+            test -s "$backup"
+            mv /etc/launch-symphony/ENABLED /etc/launch-symphony/ENABLED.moved-to-operations
+            test -z "$(docker compose -f docker-compose.symphony.yml ps -q symphony)"
+            echo 'Legacy worker stopped and disabled; encrypted off-host backup remains a separate gate.'
+
+  start-operations-worker:
+    needs: pause-and-preserve-legacy
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - name: Install pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Resume only the staged operations worker
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+        run: |
+          test -n "$OPERATIONS_HOST"
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          exec 9>/var/lock/launch-operations-deploy.lock
+          flock -w 900 9
+          cd /opt/launch-operations
+          compose=(docker compose -f docker-compose.symphony.yml -f deploy/control-plane/symphony.override.yml)
+          test -n "$("${compose[@]}" ps -aq symphony)"
+          "${compose[@]}" exec -T symphony test -f /home/node/PAUSED
+          "${compose[@]}" exec -T symphony mv /home/node/PAUSED /home/node/PAUSED.before-cutover
+          "${compose[@]}" restart symphony
+          "${compose[@]}" exec -T symphony test ! -f /home/node/PAUSED
+          curl --fail --silent --show-error http://127.0.0.1:8788/api/v1/state >/dev/null
+          echo 'Operations worker resumed; verify polling and only then opt in BOT-205.'
+          REMOTE
