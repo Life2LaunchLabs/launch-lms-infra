@@ -120,14 +120,15 @@ class ControlPlaneEnvironmentTests(unittest.TestCase):
 
     def test_control_plane_deployment_waits_for_approved_apex_cutover(self):
         topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
+        MODULE.require_operations_cutover(topology)
+        missing = deepcopy(topology)
+        del missing["dns"]["operations_cutover_evidence"]["backup_restore_run_id"]
+        with self.assertRaisesRegex(ValueError, "backup_restore_run_id"):
+            validate_topology(missing)
+        paused = deepcopy(topology)
+        paused["dns"]["operations_apex_cutover"] = False
         with self.assertRaisesRegex(ValueError, "not approved"):
-            MODULE.require_operations_cutover(topology)
-        approved = deepcopy(topology)
-        approved["application"]["session_handoff_verified"] = True
-        approved["application"]["unstable"]["cutover_approved"] = True
-        approved["dns"]["operations_apex_cutover"] = True
-        validate_topology(approved)
-        MODULE.require_operations_cutover(approved)
+            MODULE.require_operations_cutover(paused)
 
     def test_nested_cutover_rejects_unverified_cross_org_handoff(self):
         topology = load_topology(ROOT / "deploy/environments/launch-lms.yaml")
