@@ -1,0 +1,57 @@
+name: Roll back operations apex DNS
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-plane-host
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - uses: actions/checkout@v6
+      - name: Restore the existing apex A record to the legacy host
+        env:
+          DIGITALOCEAN_TOKEN: ${{ secrets.DIGITALOCEAN_TOKEN }}
+        run: |
+          set -euo pipefail
+          grep -Eq '^  operations_apex_cutover: true$' deploy/environments/launch-lms.yaml || {
+            echo 'Operations apex cutover is not enabled in this revision.' >&2
+            exit 1
+          }
+          legacy_ip="$(sed -n 's/^  unstable_ipv4: //p' deploy/environments/launch-lms.yaml)"
+          operations_ip="$(sed -n 's/^  expected_ipv4: //p' deploy/environments/launch-lms.yaml)"
+          records="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+            'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&name=%40&per_page=200')"
+          record="$(jq -cer '
+            [.domain_records[] | select(.type == "A" and .name == "@")]
+            | if length == 1 then .[0] else error("Expected exactly one operations apex A record") end
+          ' <<<"$records")"
+          record_id="$(jq -r '.id' <<<"$record")"
+          current_ip="$(jq -r '.data' <<<"$record")"
+          if [ "$current_ip" != "$operations_ip" ] && [ "$current_ip" != "$legacy_ip" ]; then
+            echo 'Operations apex points to an unexpected host; refusing rollback.' >&2
+            exit 1
+          fi
+          if [ "$current_ip" = "$operations_ip" ]; then
+            body="$(jq -nc --arg data "$legacy_ip" '{type:"A",name:"@",data:$data,ttl:300}')"
+            curl --fail --silent --show-error --request PUT \
+              --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+              --header 'Content-Type: application/json' \
+              --data "$body" \
+              "https://api.digitalocean.com/v2/domains/life2launch.dev/records/${record_id}" >/dev/null
+          fi
+          actual="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+            "https://api.digitalocean.com/v2/domains/life2launch.dev/records/${record_id}" \
+            | jq -r '.domain_record.data')"
+          test "$actual" = "$legacy_ip"
+          echo 'Operations apex A record restored to the legacy host. Future applies require explicit rollback acknowledgement.'

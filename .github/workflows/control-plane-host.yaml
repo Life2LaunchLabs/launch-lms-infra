@@ -25,6 +25,11 @@ on:
         description: Optional recovery override; the approved cutover normally discovers the existing apex record
         type: string
         required: false
+      acknowledge_operations_rollback:
+        description: Explicitly allow a new apply after an operations apex rollback
+        type: boolean
+        default: false
+        required: false
 
 permissions:
   contents: read
@@ -146,6 +151,20 @@ jobs:
           APEX_RECORD_ID: ${{ inputs.adopt_operations_apex_record_id }}
         run: |
           if tofu state show 'digitalocean_record.operations_apex[0]' >/dev/null 2>&1; then
+            if grep -Eq '^  operations_apex_cutover: true$' ../../environments/launch-lms.yaml; then
+              LEGACY_IP="$(sed -n 's/^  unstable_ipv4: //p' ../../environments/launch-lms.yaml)"
+              CURRENT="$(curl --fail --silent --show-error \
+                --header "Authorization: Bearer ${DIGITALOCEAN_TOKEN}" \
+                'https://api.digitalocean.com/v2/domains/life2launch.dev/records?type=A&name=%40&per_page=200')"
+              if jq -e --arg expected "$LEGACY_IP" \
+                '[.domain_records[] | select(.type == "A" and .name == "@" and .data == $expected)] | length == 1' \
+                <<<"$CURRENT" >/dev/null; then
+                if [ '${{ inputs.acknowledge_operations_rollback }}' != 'true' ]; then
+                  echo 'Operations apex was rolled back. A fresh apply requires explicit rollback acknowledgement.' >&2
+                  exit 1
+                fi
+              fi
+            fi
             exit 0
           fi
           if grep -Eq '^  operations_apex_cutover: true$' ../../environments/launch-lms.yaml; then
