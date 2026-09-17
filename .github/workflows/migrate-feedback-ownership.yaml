@@ -4,7 +4,7 @@ on:
     inputs:
       mode:
         type: choice
-        options: [audit, apply]
+        options: [audit, diagnose, apply]
         default: audit
         required: true
       expected_count:
@@ -34,7 +34,7 @@ jobs:
             [[ "$EXPECTED_COUNT" =~ ^[1-9][0-9]*$ ]]
             [[ "$EXPECTED_DIGEST" =~ ^[0-9a-f]{64}$ ]]
           else
-            [[ "$MODE" == audit ]]
+            [[ "$MODE" == audit || "$MODE" == diagnose ]]
             [[ -z "$EXPECTED_COUNT" && -z "$EXPECTED_DIGEST" ]]
           fi
       - name: Require protected migration credentials
