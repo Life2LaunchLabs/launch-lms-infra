@@ -1,0 +1,107 @@
+name: Bridge operations ACME during DNS propagation
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Enable or remove the temporary HTTP challenge bridge on the legacy host
+        type: choice
+        options: [enable, disable]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: operations-acme-bridge
+  cancel-in-progress: false
+
+jobs:
+  legacy-host:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: unstable
+    steps:
+      - name: Update only the legacy apex HTTP challenge route
+        uses: appleboy/ssh-action@v1
+        env:
+          BRIDGE_ACTION: ${{ inputs.action }}
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          envs: BRIDGE_ACTION
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            test "$(cat .deployment-environment)" = unstable
+            test -s Caddyfile.active
+            cp -p Caddyfile.active /tmp/operations-acme-caddy.backup
+            chmod 0600 /tmp/operations-acme-caddy.backup
+            python3 - <<'PY'
+            import os
+            from pathlib import Path
+
+            path = Path('Caddyfile.active')
+            original = path.read_text()
+            if 'life2launch.dev, *.life2launch.dev {' not in original:
+                raise SystemExit('The legacy operations apex site is absent')
+            block = '''
+            # BEGIN operations ACME migration bridge
+            http://life2launch.dev {
+                @challenge path /.well-known/acme-challenge/*
+                handle @challenge {
+                    reverse_proxy 143.110.225.231:80
+                }
+                handle {
+                    redir https://unstable.life2launch.app{uri} permanent
+                }
+            }
+            # END operations ACME migration bridge
+            '''
+            action = os.environ['BRIDGE_ACTION']
+            if action == 'enable':
+                updated = original if block in original else original + block
+            elif action == 'disable':
+                if '# BEGIN operations ACME migration bridge' in original and block not in original:
+                    raise SystemExit('Bridge text differs from the reviewed version')
+                updated = original.replace(block, '')
+            else:
+                raise SystemExit('Unknown bridge action')
+            path.write_text(updated)
+            PY
+            if ! bash -lc 'cd /opt/launch-lms; source scripts/load-release-env.sh; docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile'; then
+              cp -p /tmp/operations-acme-caddy.backup Caddyfile.active
+              exit 1
+            fi
+            bash -lc 'cd /opt/launch-lms; source scripts/load-release-env.sh; docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile'
+            rm -f /tmp/operations-acme-caddy.backup
+            echo "Legacy HTTP challenge bridge ${BRIDGE_ACTION}."
+
+  retry-operations-certificate:
+    if: inputs.action == 'enable'
+    needs: legacy-host
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - name: Install pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Restart public Caddy and wait for valid TLS on the exact operations host
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+        run: |
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            'cd /opt/launch-operations && docker compose -f deploy/control-plane/compose.yaml restart caddy'
+          curl --fail --silent --show-error --retry 30 --retry-all-errors --retry-delay 10 \
+            --max-time 10 --resolve "life2launch.dev:443:${OPERATIONS_HOST}" \
+            https://life2launch.dev/ >/dev/null
+          echo 'Valid public TLS and portal response observed on the operations host.'
