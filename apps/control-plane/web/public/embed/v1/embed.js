@@ -223,6 +223,28 @@
     }
   }
 
+  async function showAnnouncements() {
+    content.replaceChildren(element('p', 'meta', 'Loading announcements…'))
+    try {
+      const response = await api('/api/v1/embed/announcements')
+      const items = await response.json()
+      if (!items.length) {
+        content.replaceChildren(element('p', 'meta', 'No announcements are available yet.'))
+        return
+      }
+      const stack = element('div', 'stack')
+      items.forEach(item => {
+        const card = element('article', 'card stack')
+        card.append(element('h2', '', item.title), element('p', '', item.body))
+        card.append(element('time', 'meta', new Date(item.published_at).toLocaleDateString()))
+        stack.append(card)
+      })
+      content.replaceChildren(stack)
+    } catch (_) {
+      content.replaceChildren(element('p', 'notice', 'Announcements are temporarily unavailable. Launch LMS is unaffected.'), action('Try again', showAnnouncements, true))
+    }
+  }
+
   function closePanel() {
     panel.hidden = true
     toolbar.hidden = false
@@ -232,7 +254,7 @@
 
   function openPanel(name, trigger) {
     const labels = { announcements: 'Announcements', releases: "What's new", feedback: 'Feedback' }
-    const descriptions = { announcements: 'No announcements are available yet.', releases: 'Verified release notes will appear here.' }
+    const descriptions = { releases: 'Verified release notes will appear here.' }
     const panelName = Object.prototype.hasOwnProperty.call(labels, name) ? name : 'feedback'
     lastTrigger = trigger || null
     title.textContent = labels[panelName]
@@ -242,6 +264,7 @@
     send({ type: 'launch-operations:v1:state', available: true, open: true })
     close.focus()
     if (panelName === 'feedback') showFeedback()
+    if (panelName === 'announcements') showAnnouncements()
   }
 
   toolbar.addEventListener('click', event => {
