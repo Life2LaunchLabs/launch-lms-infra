@@ -58,6 +58,9 @@ token_verification:
   audience: launch-operations
   current_key_id: launch-ops-2026-01
   next_key_id: launch-ops-2026-02
+  public_keys:
+    launch-ops-2026-01: keys/launch-ops-2026-01.pub.pem
+    launch-ops-2026-02: keys/launch-ops-2026-02.pub.pem
 modules:
   orchestration: true
   feedback: true
