@@ -2,6 +2,13 @@ name: Cut over Symphony to operations host
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: Full cutover, or retry only the staged-worker resume after verifying the old host is disabled
+        type: choice
+        options: [cutover, resume-staged]
+        default: cutover
+        required: true
 
 permissions:
   contents: read
@@ -12,6 +19,7 @@ concurrency:
 
 jobs:
   pause-and-preserve-legacy:
+    if: inputs.action == 'cutover'
     runs-on: ubuntu-latest
     environment: unstable
     steps:
@@ -48,8 +56,30 @@ jobs:
             test -z "$(docker compose -f docker-compose.symphony.yml ps -q symphony)"
             echo 'Legacy worker stopped and disabled; encrypted off-host backup remains a separate gate.'
 
-  start-operations-worker:
+  verify-legacy-inactive:
     needs: pause-and-preserve-legacy
+    if: always() && (inputs.action == 'resume-staged' || needs.pause-and-preserve-legacy.result == 'success')
+    runs-on: ubuntu-latest
+    environment: unstable
+    steps:
+      - name: Require preserved disable marker and stopped legacy worker
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            test ! -e /etc/launch-symphony/ENABLED
+            test -e /etc/launch-symphony/ENABLED.moved-to-operations
+            test -z "$(docker compose -f docker-compose.symphony.yml ps -q symphony)"
+            test -n "$(find /var/backups/launch-symphony -maxdepth 1 -type f -name 'symphony-home-*.tar.gz' -size +1M -print -quit)"
+            echo 'Legacy Symphony is disabled, stopped, and backed up.'
+
+  start-operations-worker:
+    needs: verify-legacy-inactive
     runs-on: ubuntu-latest
     environment: operations
     steps:
@@ -66,19 +96,8 @@ jobs:
       - name: Resume only the staged operations worker
         env:
           OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+          INFRA_REVISION: ${{ github.sha }}
         run: |
           test -n "$OPERATIONS_HOST"
-          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" 'bash -s' <<'REMOTE'
-          set -euo pipefail
-          exec 9>/var/lock/launch-operations-deploy.lock
-          flock -w 900 9
-          cd /opt/launch-operations
-          compose=(docker compose -f docker-compose.symphony.yml -f deploy/control-plane/symphony.override.yml)
-          test -n "$("${compose[@]}" ps -aq symphony)"
-          "${compose[@]}" exec -T symphony test -f /home/node/PAUSED
-          "${compose[@]}" exec -T symphony mv /home/node/PAUSED /home/node/PAUSED.before-cutover
-          "${compose[@]}" restart symphony
-          "${compose[@]}" exec -T symphony test ! -f /home/node/PAUSED
-          curl --fail --silent --show-error http://127.0.0.1:8788/api/v1/state >/dev/null
-          echo 'Operations worker resumed; verify polling and only then opt in BOT-205.'
-          REMOTE
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            "INFRA_REVISION=${INFRA_REVISION} bash -c 'set -euo pipefail; exec 9>/var/lock/launch-operations-deploy.lock; flock -w 900 9; cd /opt/launch-operations; runuser -u launchops -- git fetch origin main; runuser -u launchops -- git merge-base --is-ancestor \"\$INFRA_REVISION\" origin/main; runuser -u launchops -- git checkout --detach \"\$INFRA_REVISION\"; bash deploy/control-plane/activate-symphony.sh'"

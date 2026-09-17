@@ -4,7 +4,9 @@ on:
   pull_request:
     paths:
       - .github/workflows/deploy-symphony-operations.yaml
+      - .github/workflows/cutover-symphony-operations.yaml
       - deploy/control-plane/deploy-symphony.sh
+      - deploy/control-plane/activate-symphony.sh
       - deploy/control-plane/symphony.override.yml
       - docker-compose.symphony.yml
       - symphony/**
@@ -25,6 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: bash -n deploy/control-plane/deploy-symphony.sh
+      - run: bash -n deploy/control-plane/activate-symphony.sh
       - run: sudo install -d -m 0755 /etc/launch-symphony && sudo install -m 0644 /dev/null /etc/launch-symphony/runner.env
       - run: docker compose -f docker-compose.symphony.yml -f deploy/control-plane/symphony.override.yml config --no-env-resolution --quiet
 
