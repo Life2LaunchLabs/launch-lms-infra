@@ -54,15 +54,13 @@ optional provider tags, keeping the automation token's permissions narrower.
 The protected private stage procedure is documented in
 [PRIVATE_STAGE.md](PRIVATE_STAGE.md). Run it before the public apex cutover.
 
-The protected `Deploy control plane` workflow transfers two complete environment
-files from `operations` Environment secrets, installs them mode `0600`, checks out
+The protected `Deploy control plane` workflow renders runtime files from individual
+`operations` Environment secrets, installs them mode `0600`, checks out
 the exact protected-branch revision as `launchops`, and runs
-`scripts/deploy-control-plane.sh` under a host deployment lock. Configure:
-
-- `OPERATIONS_CONTROL_PLANE_ENV` from `control-plane.env.example`, including
-  `OPERATIONS_EXPECTED_IP=143.110.225.231`;
-- `OPERATIONS_POSTGRES_ENV` from `postgres.env.example`, using the same URL-safe
-  PostgreSQL password as the database URL.
+`scripts/deploy-control-plane.sh` under a host deployment lock. Configure the
+individual secrets in [OWNER_SETUP.md](OWNER_SETUP.md). The workflow derives
+the database URL from the single PostgreSQL password and uses versioned
+topology for the public URL and expected host IP.
 
 Deployment refuses placeholders, short session secrets, mismatched database
 credentials, non-production mode, non-HTTPS public URLs, and DNS that does not

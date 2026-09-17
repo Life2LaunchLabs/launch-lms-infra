@@ -26,18 +26,21 @@ jobs:
           chmod 0600 "$RUNNER_TEMP/operations-key"
           printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
           chmod 0600 "$HOME/.ssh/known_hosts"
-      - name: Materialize runtime files without logging values
+      - name: Render validated private runtime files
         env:
-          CONTROL_PLANE_ENV: ${{ secrets.OPERATIONS_CONTROL_PLANE_ENV }}
-          POSTGRES_ENV: ${{ secrets.OPERATIONS_POSTGRES_ENV }}
-          GITHUB_APP_PRIVATE_KEY: ${{ secrets.OPERATIONS_GITHUB_APP_PRIVATE_KEY }}
-        run: |
-          test -n "$CONTROL_PLANE_ENV" && test -n "$POSTGRES_ENV" && test -n "$GITHUB_APP_PRIVATE_KEY"
-          printf '%s\n' "$CONTROL_PLANE_ENV" > "$RUNNER_TEMP/launch-operations-secrets/control-plane.env"
-          printf '%s\n' "$POSTGRES_ENV" > "$RUNNER_TEMP/launch-operations-secrets/postgres.env"
-          printf '%s\n' "$GITHUB_APP_PRIVATE_KEY" > "$RUNNER_TEMP/launch-operations-secrets/github-app.pem"
-          chmod 0600 "$RUNNER_TEMP/launch-operations-secrets/"*.env
-          chmod 0600 "$RUNNER_TEMP/launch-operations-secrets/github-app.pem"
+          OPERATIONS_POSTGRES_PASSWORD: ${{ secrets.OPERATIONS_POSTGRES_PASSWORD }}
+          OPERATIONS_SESSION_SECRET: ${{ secrets.OPERATIONS_SESSION_SECRET }}
+          OPERATIONS_GITHUB_OAUTH_CLIENT_ID: ${{ secrets.OPERATIONS_GITHUB_OAUTH_CLIENT_ID }}
+          OPERATIONS_GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.OPERATIONS_GITHUB_OAUTH_CLIENT_SECRET }}
+          OPERATIONS_GITHUB_APP_ID: ${{ secrets.OPERATIONS_GITHUB_APP_ID }}
+          OPERATIONS_GITHUB_APP_INSTALLATION_ID: ${{ secrets.OPERATIONS_GITHUB_APP_INSTALLATION_ID }}
+          OPERATIONS_GITHUB_APP_PRIVATE_KEY: ${{ secrets.OPERATIONS_GITHUB_APP_PRIVATE_KEY }}
+          OPERATIONS_JIRA_BASE_URL: ${{ secrets.OPERATIONS_JIRA_BASE_URL }}
+          OPERATIONS_JIRA_DELIVERY_EMAIL: ${{ secrets.OPERATIONS_JIRA_DELIVERY_EMAIL }}
+          OPERATIONS_JIRA_DELIVERY_TOKEN: ${{ secrets.OPERATIONS_JIRA_DELIVERY_TOKEN }}
+          OPERATIONS_JIRA_FEEDBACK_EMAIL: ${{ secrets.OPERATIONS_JIRA_FEEDBACK_EMAIL }}
+          OPERATIONS_JIRA_FEEDBACK_TOKEN: ${{ secrets.OPERATIONS_JIRA_FEEDBACK_TOKEN }}
+        run: python3 scripts/render-control-plane-runtime.py "$RUNNER_TEMP/launch-operations-secrets"
       - name: Transfer runtime files
         env:
           OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}

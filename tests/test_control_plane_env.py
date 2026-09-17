@@ -2,6 +2,7 @@
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
@@ -12,6 +13,10 @@ SPEC = importlib.util.spec_from_file_location("control_plane_env", ROOT / "scrip
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 from environment_topology import load_topology, validate_topology
+
+RENDER_SPEC = importlib.util.spec_from_file_location("render_runtime", ROOT / "scripts/render-control-plane-runtime.py")
+RENDER = importlib.util.module_from_spec(RENDER_SPEC)
+RENDER_SPEC.loader.exec_module(RENDER)
 
 
 def runtime():
@@ -34,6 +39,37 @@ def runtime():
 
 
 class ControlPlaneEnvironmentTests(unittest.TestCase):
+    def test_individual_secrets_render_matching_private_files(self):
+        source = {secret: f"value-for-{name}" for name, secret in RENDER.SECRET_MAP.items()}
+        source.update({
+            "OPERATIONS_POSTGRES_PASSWORD": "a" * 40,
+            "OPERATIONS_SESSION_SECRET": "b" * 48,
+            "OPERATIONS_GITHUB_APP_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----",
+            "OPERATIONS_JIRA_BASE_URL": "https://example.atlassian.net",
+            "OPERATIONS_JIRA_DELIVERY_TOKEN": "delivery-token",
+            "OPERATIONS_JIRA_FEEDBACK_TOKEN": "feedback-token",
+        })
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory)
+            RENDER.render(destination, source)
+            from env_file import read_env
+            control = read_env(destination / "control-plane.env")
+            postgres = read_env(destination / "postgres.env")
+            self.assertEqual(control["OPERATIONS_DATABASE_URL"],
+                             f"postgresql+psycopg://operations:{source['OPERATIONS_POSTGRES_PASSWORD']}@postgres/operations")
+            self.assertEqual(postgres["POSTGRES_PASSWORD"], source["OPERATIONS_POSTGRES_PASSWORD"])
+            self.assertEqual((destination / "github-app.pem").read_text().strip(),
+                             source["OPERATIONS_GITHUB_APP_PRIVATE_KEY"])
+            for name in ("control-plane.env", "postgres.env", "github-app.pem"):
+                self.assertEqual((destination / name).stat().st_mode & 0o777, 0o600)
+            self.assertNotIn("OPERATIONS_JIRA_FEEDBACK_TOKEN", (destination / "postgres.env").read_text())
+        for bad in ("short", "x" * 32 + "@"):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(ValueError, "URL-safe"):
+                    RENDER.runtime({**source, "OPERATIONS_POSTGRES_PASSWORD": bad})
+        with self.assertRaisesRegex(ValueError, "single trimmed line"):
+            RENDER.runtime({**source, "OPERATIONS_JIRA_DELIVERY_TOKEN": "token\nINJECTED=x"})
+
     def test_operations_apex_adoption_is_repository_discovered(self):
         workflow = (ROOT / ".github/workflows/control-plane-host.yaml").read_text()
         self.assertIn("domains/life2launch.dev/records?type=A&name=%40", workflow)
