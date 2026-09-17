@@ -29,12 +29,15 @@ class FakeTracker(TrackerAdapter):
         self.attach_calls = []
         self.fail_issue = False
         self.fail_attachment = None
+        self.issue = None
+        self.comment_values = []
 
     async def create_issue(self, project, summary, description, properties, idempotency_key):
         self.issue_calls += 1
         if self.fail_issue:
             raise httpx.ConnectError("offline")
-        return TrackerIssue("FEED-7", summary, "Open", "r1", properties)
+        self.issue = TrackerIssue("FEED-7", summary, "Open", "r1", properties, {"attachment": []})
+        return self.issue
 
     async def attach(self, key, filename, content_type, stream):
         self.attach_calls.append(filename)
@@ -42,11 +45,17 @@ class FakeTracker(TrackerAdapter):
             raise httpx.ConnectError("attachment offline")
         return {"id": len(self.attach_calls), "filename": filename}
 
-    async def get_issue(self, key): raise NotImplementedError
-    async def comments(self, key): raise NotImplementedError
-    async def add_comment(self, key, body, public): raise NotImplementedError
-    async def transition(self, key, status): raise NotImplementedError
-    async def set_properties(self, key, properties): raise NotImplementedError
+    async def get_issue(self, key):
+        if not self.issue or self.issue.key != key: raise LookupError(key)
+        return self.issue
+    async def list_issues(self, project): return [self.issue] if self.issue else []
+    async def comments(self, key): return list(self.comment_values)
+    async def add_comment(self, key, body, public):
+        value = {"id": str(len(self.comment_values) + 1), "body": body, "created": "2026-09-17T00:00:00Z"}
+        self.comment_values.append(value)
+        return value
+    async def transition(self, key, status): self.issue.status = status
+    async def set_properties(self, key, properties): self.issue.properties.update(properties)
 
 
 def submission(message="The save button is stuck", names=()):
@@ -121,6 +130,51 @@ class FeedbackServiceTests(unittest.IsolatedAsyncioTestCase):
             changed = dict(self.arguments); changed["opaque_user_id"] = "c" * 64
             with self.assertRaises(SubmissionConflict):
                 await self.service.submit(session, **changed, submission=submission())
+
+    async def test_history_filters_internal_notes_and_owns_unread_state(self):
+        with Session(self.engine) as session:
+            await self.service.submit(session, **self.arguments, submission=submission())
+        self.tracker.issue.fields["description"] = {
+            "type": "doc", "version": 1, "content": [
+                {"type": "paragraph", "content": [{"type": "text", "text": "Full original feedback"}]},
+                {"type": "codeBlock", "content": [{"type": "text", "text": "private context"}]},
+            ],
+        }
+        def adf(text):
+            return {"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
+        self.tracker.comment_values = [
+            {"id": "1", "body": adf("[Launch LMS internal note] private"), "created": "one"},
+            {"id": "2", "body": adf("[Launch LMS reply] Please retry"), "created": "two"},
+            {"id": "3", "body": adf("[Launch LMS tester comment] Still broken"), "created": "three"},
+        ]
+        with Session(self.engine) as session:
+            values = await self.service.conversations(session, **{key: self.arguments[key] for key in
+                ("project_id", "environment", "opaque_user_id", "opaque_org_id")})
+            self.assertEqual([entry["author"] for entry in values[0]["entries"]], ["operator", "tester"])
+            self.assertEqual(values[0]["message"], "Full original feedback")
+            self.assertTrue(values[0]["has_unread"])
+            self.assertNotIn("private", str(values))
+            self.service.mark_viewed(
+                session, project_id="launch-lms", environment="unstable",
+                opaque_user_id="a" * 64, conversation_id="FEED-7", revision=values[0]["revision"],
+            )
+        with Session(self.engine) as session:
+            values = await self.service.conversations(session, **{key: self.arguments[key] for key in
+                ("project_id", "environment", "opaque_user_id", "opaque_org_id")})
+            self.assertFalse(values[0]["has_unread"])
+
+    async def test_tester_reply_and_resolution_remain_public_and_identity_scoped(self):
+        with Session(self.engine) as session:
+            await self.service.submit(session, **self.arguments, submission=submission())
+        identity = {key: self.arguments[key] for key in
+                    ("project_id", "environment", "opaque_user_id", "opaque_org_id")}
+        await self.service.tester_reply("FEED-7", "Here is more detail", **identity)
+        await self.service.confirm_resolution("FEED-7", "looks_good", **identity)
+        self.assertIn("[Launch LMS tester comment] Here is more detail", str(self.tracker.comment_values[0]))
+        self.assertEqual(self.tracker.issue.properties["launch-operations"]["tester_resolution"], "looks_good")
+        other = dict(identity); other["opaque_org_id"] = "c" * 64
+        with self.assertRaises(LookupError):
+            await self.service.tester_reply("FEED-7", "cross tenant", **other)
 
     def test_browser_context_removes_route_identifiers_and_untrusted_release(self):
         value = feedback_api.sanitize_context(json.dumps({

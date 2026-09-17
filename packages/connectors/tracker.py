@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO, Iterable
 
@@ -15,6 +15,7 @@ class TrackerIssue:
     status: str
     revision: str
     properties: dict
+    fields: dict = field(default_factory=dict)
 
 
 class TrackerAdapter(ABC):
@@ -23,6 +24,9 @@ class TrackerAdapter(ABC):
 
     @abstractmethod
     async def get_issue(self, key: str) -> TrackerIssue: ...
+
+    @abstractmethod
+    async def list_issues(self, project: str) -> list[TrackerIssue]: ...
 
     @abstractmethod
     async def comments(self, key: str) -> list[dict]: ...

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from config import Settings
@@ -24,6 +26,18 @@ STATIC_SEGMENTS = {
     "badges", "learning-path", "resources", "communities", "community", "discussion",
     "account", "admin", "platform", "users", "settings", "feedback", "analytics",
 }
+
+
+class FeedbackReply(BaseModel):
+    message: str
+
+
+class FeedbackResolution(BaseModel):
+    outcome: Literal["looks_good", "still_happening"]
+
+
+class FeedbackViewed(BaseModel):
+    revision: str
 
 
 def _route(value: object) -> str:
@@ -63,6 +77,13 @@ def service(request: Request) -> FeedbackService:
     manifest = load_project("launch-lms")
     credentials = JiraCredentials(settings.jira_base_url, settings.jira_feedback_email, settings.jira_feedback_token)
     return FeedbackService(JiraAdapter(credentials), manifest.data["tracker"]["feedback_project"])
+
+
+def identity_arguments(identity: EmbedSession) -> dict:
+    return {
+        "project_id": identity.project_id, "environment": identity.environment,
+        "opaque_user_id": identity.opaque_user_id, "opaque_org_id": identity.opaque_org_id,
+    }
 
 
 @router.post("/api/v1/embed/feedback")
@@ -109,6 +130,71 @@ async def create_feedback(
         return {"status": "pending", "issue_key": pending.result.get("issue_key")}
     response.status_code = 201 if created else 200
     return {"status": "synchronized", "issue_key": result["issue_key"]}
+
+
+@router.get("/api/v1/embed/feedback")
+async def list_feedback(
+    request: Request,
+    identity: EmbedSession = Depends(require_embed_session),
+    session: Session = Depends(database_session),
+) -> list[dict]:
+    return await service(request).conversations(session, **identity_arguments(identity))
+
+
+@router.post("/api/v1/embed/feedback/{issue_key}/reply", status_code=204)
+async def reply_to_feedback(
+    issue_key: str,
+    body: FeedbackReply,
+    request: Request,
+    identity: EmbedSession = Depends(require_embed_session),
+) -> Response:
+    message = body.message.strip()
+    if not message or len(message) > 10_000:
+        raise HTTPException(422, "Reply must contain 1-10,000 characters")
+    try:
+        await service(request).tester_reply(issue_key, message, **identity_arguments(identity))
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    return Response(status_code=204)
+
+
+@router.post("/api/v1/embed/feedback/{issue_key}/resolution", status_code=204)
+async def resolve_feedback(
+    issue_key: str,
+    body: FeedbackResolution,
+    request: Request,
+    identity: EmbedSession = Depends(require_embed_session),
+) -> Response:
+    try:
+        await service(request).confirm_resolution(
+            issue_key, body.outcome, **identity_arguments(identity),
+        )
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    return Response(status_code=204)
+
+
+@router.post("/api/v1/embed/feedback/{issue_key}/viewed", status_code=204)
+async def feedback_viewed(
+    issue_key: str,
+    body: FeedbackViewed,
+    request: Request,
+    identity: EmbedSession = Depends(require_embed_session),
+    session: Session = Depends(database_session),
+) -> Response:
+    if not body.revision or len(body.revision) > 128:
+        raise HTTPException(422, "Feedback revision is invalid")
+    api = service(request)
+    try:
+        await api.owned_issue(issue_key, **identity_arguments(identity))
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    api.mark_viewed(
+        session, project_id=identity.project_id, environment=identity.environment,
+        opaque_user_id=identity.opaque_user_id, conversation_id=issue_key,
+        revision=body.revision,
+    )
+    return Response(status_code=204)
 
 
 @router.get("/api/v1/embed/feedback/submissions/{idempotency_key}")

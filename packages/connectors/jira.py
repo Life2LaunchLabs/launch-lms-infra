@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import BinaryIO
 from urllib.parse import urlparse
 
@@ -50,7 +51,7 @@ class JiraAdapter(TrackerAdapter):
         return TrackerIssue(
             key=value["key"], summary=fields.get("summary", ""),
             status=fields.get("status", {}).get("name", ""),
-            revision=fields.get("updated", ""), properties=value.get("properties", {}),
+            revision=fields.get("updated", ""), properties=value.get("properties", {}), fields=fields,
         )
 
     async def create_issue(self, project: str, summary: str, description: dict, properties: dict, idempotency_key: str) -> TrackerIssue:
@@ -74,11 +75,48 @@ class JiraAdapter(TrackerAdapter):
             response.raise_for_status()
             return self._issue(response.json())
 
-    async def comments(self, key: str) -> list[dict]:
+    async def list_issues(self, project: str) -> list[TrackerIssue]:
+        if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,31}", project):
+            raise ValueError("tracker project key is invalid")
+        issues = []
+        token = None
+        seen_tokens = set()
         async with self._client() as client:
-            response = await client.get(self._path(f"/rest/api/3/issue/{key}/comment"), params={"orderBy": "created"})
-            response.raise_for_status()
-            return response.json().get("comments", [])
+            while len(issues) < 1000:
+                params = {
+                    "jql": f'project = "{project}" ORDER BY updated DESC',
+                    "fields": "summary,status,updated,priority,labels,attachment,description",
+                    "properties": "*all", "maxResults": 100,
+                }
+                if token:
+                    params["nextPageToken"] = token
+                response = await client.get(self._path("/rest/api/3/search/jql"), params=params)
+                response.raise_for_status()
+                value = response.json()
+                issues.extend(self._issue(item) for item in value.get("issues", []))
+                next_token = value.get("nextPageToken")
+                if value.get("isLast") is True or not next_token or next_token in seen_tokens:
+                    break
+                seen_tokens.add(next_token)
+                token = next_token
+        return issues[:1000]
+
+    async def comments(self, key: str) -> list[dict]:
+        comments = []
+        start_at = 0
+        async with self._client() as client:
+            while len(comments) < 1000:
+                response = await client.get(self._path(f"/rest/api/3/issue/{key}/comment"), params={
+                    "orderBy": "created", "startAt": start_at, "maxResults": 100,
+                })
+                response.raise_for_status()
+                value = response.json()
+                page = value.get("comments", [])
+                comments.extend(page)
+                start_at += len(page)
+                if not page or start_at >= int(value.get("total", start_at)):
+                    break
+        return comments[:1000]
 
     async def add_comment(self, key: str, body: dict, public: bool) -> dict:
         async with self._client() as client:
