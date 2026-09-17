@@ -1,4 +1,30 @@
-# Symphony on the dev server
+# Symphony worker
+
+The original worker runs on the unstable host. The dedicated operations-host
+deployment is now staged separately by the protected
+`Deploy Symphony on operations host` workflow. It uses the same pinned runner
+image and one-worker policy but a 4 GiB/2 CPU limit. The first start creates a
+persistent `PAUSED` marker before the service starts, even when a saved volume
+has been restored. Its unauthenticated status API remains loopback-only.
+
+The operations Environment must supply `OPERATIONS_SYMPHONY_RUNNER_ENV`
+(`JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`, `GH_TOKEN`) and
+`OPERATIONS_SYMPHONY_OPENAI_API_KEY` as secrets, in addition to its existing
+operations SSH settings. Dispatch the workflow from protected `main`; it
+deploys the exact commit and validates the loopback state API. This staging
+step does not pause or stop the old worker and does not unpause the new one.
+
+The protected `Cut over Symphony to operations host` workflow refuses a legacy
+worker with nonempty workspaces, persists its pause, stops it, saves a root-only
+volume archive, and removes the legacy enable marker. Only after that job
+succeeds does the operations job remove its staged pause marker and restart the
+new worker. Inspect the run and worker state before adding `symphony` to
+BOT-205. The old archive must also receive an encrypted off-host copy before
+the old host is retired; the workflow does not yet provide off-host retention
+or restore rehearsal. Do not use public control-plane DNS or OAuth as a
+prerequisite for this first canary.
+
+Legacy dev-host deployment details follow.
 
 Pinned OpenAI Symphony v0.0.2 with Codex 0.154.0 runs one agent in a separate,
 resource-limited Compose project. It cannot mount the Docker socket, application
@@ -35,8 +61,9 @@ worker records the deployed commit before moving a task to In Review.
 
 Existing statuses stay: Idea, To Do, In Progress, In Review, Done. Add `symphony`
 only to formalized parent Story/Task issues ready for autonomous delivery, never
-subtasks. This opt-in label is the new execution taxonomy. The initial canary is
-BOT-217. An In Progress label means this runner owns/resumes that task, so do not
+subtasks. This opt-in label is the new execution taxonomy. The operations-host
+canary is BOT-205; leave its label off until the host cutover has succeeded. An
+In Progress label means this runner owns/resumes that task, so do not
 apply it to another worker's active task. Done remains owner signoff.
 
 Blocked workers remove the label and leave an exact blocker in their workpad.

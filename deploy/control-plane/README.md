@@ -67,6 +67,17 @@ resolve the configured domain to the expected host. Only then does it build/star
 Compose and verify public HTTPS. The workflow is manual until backup/restore and
 deployment observation have completed their first live acceptance cycle.
 
+Symphony can be staged before public control-plane DNS. The protected
+`Deploy Symphony on operations host` workflow uses the pinned runner image,
+adds an operations-host resource override, and starts a first-time worker
+paused with its status port on loopback. Supply the `operations` Environment
+secrets `OPERATIONS_SYMPHONY_RUNNER_ENV` and
+`OPERATIONS_SYMPHONY_OPENAI_API_KEY`; see [the worker runbook](../../symphony/README.md)
+for the required environment file and cutover gate. The protected
+`Cut over Symphony to operations host` workflow preserves and disables the
+legacy worker before resuming the staged one. Neither workflow changes DNS,
+starts the public portal, or grants production deployment credentials.
+
 Public origins and the staged DNS cutover are defined in
 `deploy/environments/launch-lms.yaml`. The deployment refuses to start while its
 `operations_apex_cutover` gate is false. Follow `deploy/environments/README.md`;

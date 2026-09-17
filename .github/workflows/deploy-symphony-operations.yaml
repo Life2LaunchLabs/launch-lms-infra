@@ -1,0 +1,84 @@
+name: Deploy Symphony on operations host
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/deploy-symphony-operations.yaml
+      - deploy/control-plane/deploy-symphony.sh
+      - deploy/control-plane/symphony.override.yml
+      - docker-compose.symphony.yml
+      - symphony/**
+      - services/orchestrator/**
+      - projects/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-symphony-operations
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash -n deploy/control-plane/deploy-symphony.sh
+      - run: docker compose -f docker-compose.symphony.yml -f deploy/control-plane/symphony.override.yml config --no-env-resolution --quiet
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: operations
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install pinned operations SSH identity
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OPERATIONS_SSH_PRIVATE_KEY }}
+          SSH_HOST_KEY: ${{ secrets.OPERATIONS_SSH_HOST_KEY }}
+        run: |
+          install -d -m 0700 "$HOME/.ssh" "$RUNNER_TEMP/symphony-secrets"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$RUNNER_TEMP/operations-key"
+          chmod 0600 "$RUNNER_TEMP/operations-key"
+          printf '%s\n' "$SSH_HOST_KEY" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+      - name: Materialize worker credentials privately
+        env:
+          RUNNER_ENV: ${{ secrets.OPERATIONS_SYMPHONY_RUNNER_ENV }}
+          OPENAI_API_KEY: ${{ secrets.OPERATIONS_SYMPHONY_OPENAI_API_KEY }}
+        run: |
+          test -n "$RUNNER_ENV" && test -n "$OPENAI_API_KEY"
+          printf '%s\n' "$RUNNER_ENV" > "$RUNNER_TEMP/symphony-secrets/runner.env"
+          printf '%s\n' "$OPENAI_API_KEY" > "$RUNNER_TEMP/symphony-secrets/openai-api-key"
+          chmod 0600 "$RUNNER_TEMP/symphony-secrets/"*
+      - name: Transfer worker credentials
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+        run: |
+          test -n "$OPERATIONS_HOST"
+          scp -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes \
+            "$RUNNER_TEMP/symphony-secrets/runner.env" \
+            "$RUNNER_TEMP/symphony-secrets/openai-api-key" \
+            "root@${OPERATIONS_HOST}:/tmp/"
+      - name: Deploy exact protected revision, initially paused
+        env:
+          OPERATIONS_HOST: ${{ vars.OPERATIONS_HOST }}
+          INFRA_REVISION: ${{ github.sha }}
+        run: |
+          ssh -i "$RUNNER_TEMP/operations-key" -o IdentitiesOnly=yes "root@${OPERATIONS_HOST}" \
+            "INFRA_REVISION=${INFRA_REVISION} bash -s" <<'REMOTE'
+          set -euo pipefail
+          exec 9>/var/lock/launch-operations-deploy.lock
+          flock -w 900 9
+          install -d -m 0700 /etc/launch-symphony
+          install -m 0600 -o root -g root /tmp/runner.env /etc/launch-symphony/runner.env
+          install -m 0600 -o 1000 -g 1000 /tmp/openai-api-key /etc/launch-symphony/openai-api-key
+          rm -f /tmp/runner.env /tmp/openai-api-key
+          cd /opt/launch-operations
+          runuser -u launchops -- git fetch origin main
+          runuser -u launchops -- git merge-base --is-ancestor "$INFRA_REVISION" origin/main
+          runuser -u launchops -- git checkout --detach "$INFRA_REVISION"
+          bash deploy/control-plane/deploy-symphony.sh
+          REMOTE

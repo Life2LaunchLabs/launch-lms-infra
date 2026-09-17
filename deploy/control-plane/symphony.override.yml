@@ -1,0 +1,6 @@
+services:
+  symphony:
+    # The dedicated 8 GiB operations host has room for one bounded worker.
+    # Keep the dashboard on loopback; the public portal will proxy sanitized state.
+    mem_limit: 4g
+    cpus: 2
