@@ -28,7 +28,7 @@ def require_operations_cutover(topology: dict | None) -> None:
 
 
 def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.getaddrinfo,
-             topology: dict | None = None) -> None:
+             topology: dict | None = None, check_dns: bool = True) -> None:
     missing = [name for name in REQUIRED if not control.get(name) or
                "CONFIGURE" in control[name] or "CHANGE_ME" in control[name]]
     for name in ("POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD"):
@@ -40,6 +40,8 @@ def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.
         raise ValueError("OPERATIONS_SESSION_SECRET must contain at least 32 characters")
     if control.get("OPERATIONS_ENVIRONMENT") != "production":
         raise ValueError("The dedicated control plane must use OPERATIONS_ENVIRONMENT=production")
+    if control.get("OPERATIONS_READ_ONLY", "true") != "true":
+        raise ValueError("Initial operations deployment must enforce OPERATIONS_READ_ONLY=true")
     public = urlparse(control["OPERATIONS_PUBLIC_URL"])
     if public.scheme != "https" or public.hostname != control["OPERATIONS_DOMAIN"] or public.path not in ("", "/"):
         raise ValueError("Public URL must be the HTTPS operations domain without a path")
@@ -59,9 +61,10 @@ def validate(control: dict[str, str], postgres: dict[str, str], resolver=socket.
         raise ValueError("Database URL and PostgreSQL password do not match")
     if control["JIRA_DELIVERY_TOKEN"] == control["JIRA_FEEDBACK_TOKEN"]:
         raise ValueError("Delivery and feedback Jira credentials must be distinct")
-    addresses = {value[4][0] for value in resolver(control["OPERATIONS_DOMAIN"], 443, type=socket.SOCK_STREAM)}
-    if expected not in addresses:
-        raise ValueError("Operations DNS does not resolve to OPERATIONS_EXPECTED_IP")
+    if check_dns:
+        addresses = {value[4][0] for value in resolver(control["OPERATIONS_DOMAIN"], 443, type=socket.SOCK_STREAM)}
+        if expected not in addresses:
+            raise ValueError("Operations DNS does not resolve to OPERATIONS_EXPECTED_IP")
 
 
 def main() -> None:
@@ -70,12 +73,14 @@ def main() -> None:
     parser.add_argument("postgres", type=Path)
     parser.add_argument("--topology", type=Path)
     parser.add_argument("--require-operations-cutover", action="store_true")
+    parser.add_argument("--skip-dns", action="store_true")
     args = parser.parse_args()
     try:
         topology = load_topology(args.topology) if args.topology else None
         if args.require_operations_cutover:
             require_operations_cutover(topology)
-        validate(read_env(args.control), read_env(args.postgres), topology=topology)
+        validate(read_env(args.control), read_env(args.postgres), topology=topology,
+                 check_dns=not args.skip_dns)
     except (OSError, ValueError) as error:
         raise SystemExit(str(error)) from error
     print("Control-plane runtime contract is valid.")

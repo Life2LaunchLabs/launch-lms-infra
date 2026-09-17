@@ -6,6 +6,7 @@ COPY services services
 COPY packages packages
 COPY projects projects
 COPY apps/control-plane/api api
+COPY deploy/control-plane/postgres /opt/launch-operations/postgres
 WORKDIR /opt/launch-operations/api
 USER 65532:65532
 ENV PYTHONPATH=/opt/launch-operations

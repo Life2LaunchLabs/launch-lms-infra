@@ -4,3 +4,8 @@ services:
     # Keep the dashboard on loopback; the public portal will proxy sanitized state.
     mem_limit: 4g
     cpus: 2
+    networks: [default, status]
+networks:
+  status:
+    name: launch-operations-status
+    external: true

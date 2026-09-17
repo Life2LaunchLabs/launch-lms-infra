@@ -6,7 +6,6 @@ services:
     env_file: /etc/launch-operations/postgres.env
     volumes:
       - operations-postgres:/var/lib/postgresql/data
-      - ./postgres:/docker-entrypoint-initdb.d:ro
     networks: [data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U operations -d operations"]
@@ -58,6 +57,7 @@ networks:
   web: {}
   status:
     name: launch-operations-status
+    external: true
 volumes:
   operations-postgres: {}
   operations-caddy-data: {}

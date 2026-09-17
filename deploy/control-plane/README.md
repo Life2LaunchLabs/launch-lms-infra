@@ -51,6 +51,9 @@ optional provider tags, keeping the automation token's permissions narrower.
 
 ## Repository-managed service deployment
 
+The protected private stage procedure is documented in
+[PRIVATE_STAGE.md](PRIVATE_STAGE.md). Run it before the public apex cutover.
+
 The protected `Deploy control plane` workflow transfers two complete environment
 files from `operations` Environment secrets, installs them mode `0600`, checks out
 the exact protected-branch revision as `launchops`, and runs
