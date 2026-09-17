@@ -38,10 +38,12 @@ from pathlib import Path
 import subprocess
 import sys
 
-revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+revision = subprocess.check_output(
+    ["runuser", "-u", "launchops", "--", "git", "rev-parse", "HEAD"], text=True
+).strip()
 value = {"schema_version": 1, "revision": revision, "domain": sys.argv[1],
          "deployed_at": datetime.now(timezone.utc).isoformat()}
 Path("/var/lib/launch-operations/deployed.json").write_text(json.dumps(value, indent=2) + "\n")
 PY
 chmod 0600 /var/lib/launch-operations/deployed.json
-echo "Control plane deployed and verified at revision $(git rev-parse HEAD)."
+echo "Control plane deployed and verified at revision $(runuser -u launchops -- git rev-parse HEAD)."
