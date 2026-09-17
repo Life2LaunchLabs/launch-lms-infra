@@ -1,26 +1,24 @@
 # Private operations stage
 
 The first portal stage uses the protected `Stage control plane privately` workflow on
-`main` and the `operations` GitHub Environment. It installs the two protected
-runtime files, checks out the exact workflow commit, creates the private status
+`main` and the `operations` GitHub Environment. It renders runtime files from
+individual protected secrets, checks out the exact workflow commit, creates the private status
 network, connects the already running Symphony worker, migrates PostgreSQL, and
 starts only PostgreSQL, API, and web. It does not start Caddy, publish a host port,
 change DNS, or enable the Launch LMS embed.
 
-Set `OPERATIONS_READ_ONLY=true` in `OPERATIONS_CONTROL_PLANE_ENV`. The API denies
+The renderer fixes `OPERATIONS_READ_ONLY=true`. The API denies
 every non-read `/api/v1/` request except local session logout before route code
 runs, including operator dispatch and all embed writes. The stage script probes
 that gate and checks API, web, and Symphony status reachability from inside the
 private stack. The portal still requires GitHub OAuth when public routing is
 later enabled.
 
-An operator can create the two files without hand-formatting them by running
-`python3 scripts/setup-operations-runtime.py` from a local infra checkout after
-creating the OAuth App and installing the GitHub App. It prompts for the PEM file
-and Jira/OAuth values, generates fresh PostgreSQL and session secrets, validates
-the DNS-independent topology, and uploads the two environment secrets plus a
-separate `OPERATIONS_GITHUB_APP_PRIVATE_KEY` PEM secret directly through `gh`.
-It prints neither the values nor the generated files.
+Add the individual secrets listed in [OWNER_SETUP.md](OWNER_SETUP.md) through
+GitHub Settings. The workflow validates them, renders private mode `0600`
+files on the runner, and transfers those files to the host. The files are
+runtime artifacts only; rotate a credential by editing its one secret and
+rerunning the protected stage or deployment workflow.
 
 Versioned SQL is under `postgres/`. The API image applies pending files in a
 single transaction before API startup and rejects a changed migration checksum.
