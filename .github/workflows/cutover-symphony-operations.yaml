@@ -80,6 +80,7 @@ jobs:
 
   start-operations-worker:
     needs: verify-legacy-inactive
+    if: always() && needs.verify-legacy-inactive.result == 'success'
     runs-on: ubuntu-latest
     environment: operations
     steps:
