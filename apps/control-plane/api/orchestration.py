@@ -23,7 +23,7 @@ def _nonnegative(value: object) -> int | None:
     return value if type(value) is int and 0 <= value <= 1_000_000_000 else None
 
 
-def _rows(value: object, kind: str) -> list[dict]:
+def _rows(value: object, kind: str, issue_site: str) -> list[dict]:
     if not isinstance(value, list):
         return []
     result = []
@@ -34,7 +34,7 @@ def _rows(value: object, kind: str) -> list[dict]:
         if not isinstance(identifier, str) or not ISSUE.fullmatch(identifier):
             continue
         item = {"issue": identifier,
-                "issue_url": f"https://life2launch.atlassian.net/browse/{identifier}",
+                "issue_url": f"https://{issue_site}/browse/{identifier}",
                 "state": kind}
         if kind == "running":
             item.update(started_at=_stamp(row.get("started_at")),
@@ -50,7 +50,7 @@ def _rows(value: object, kind: str) -> list[dict]:
     return result
 
 
-def sanitized_status(raw: object) -> dict:
+def sanitized_status(raw: object, issue_site: str = "henrydker.atlassian.net") -> dict:
     if (not isinstance(raw, dict) or "error" in raw
             or any(not isinstance(raw.get(key), list) for key in ("running", "retrying", "blocked"))):
         raise ValueError("Invalid Symphony status response")
@@ -60,9 +60,11 @@ def sanitized_status(raw: object) -> dict:
     if generated_at:
         generated = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
         stale = abs((datetime.now(timezone.utc) - generated).total_seconds()) > 120
-    running = _rows(raw.get("running"), "running")
-    retrying = _rows(raw.get("retrying"), "retrying")
-    blocked = _rows(raw.get("blocked"), "blocked")
+    if not re.fullmatch(r"[a-z0-9.-]+\.atlassian\.net", issue_site):
+        raise ValueError("Invalid issue site")
+    running = _rows(raw.get("running"), "running", issue_site)
+    retrying = _rows(raw.get("retrying"), "retrying", issue_site)
+    blocked = _rows(raw.get("blocked"), "blocked", issue_site)
     return {"availability": "stale" if stale else "live", "generated_at": generated_at,
             "observed_at": observed_at, "running": running, "retrying": retrying,
             "blocked": blocked,

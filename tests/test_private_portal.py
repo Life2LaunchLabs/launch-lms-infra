@@ -32,7 +32,7 @@ class StatusTests(unittest.TestCase):
             "rate_limits": {"private": "value"},
         })
         self.assertEqual(value["availability"], "live")
-        self.assertEqual(value["running"][0]["issue_url"], "https://life2launch.atlassian.net/browse/BOT-205")
+        self.assertEqual(value["running"][0]["issue_url"], "https://henrydker.atlassian.net/browse/BOT-205")
         self.assertEqual(value["retrying"][0]["reason"], "Retry scheduled")
         self.assertEqual(value["blocked"][0]["reason"], "Agent blocked; inspect the delivery issue")
         self.assertNotIn("private", str(value))
