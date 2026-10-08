@@ -131,6 +131,44 @@ class DeploymentTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertIn('LAUNCHLMS_COOKIE_SCOPE must be host-only', result.stderr)
 
+    def test_demo_host_sits_under_the_wildcard_and_is_required_on_nested_unstable(self):
+        base = (
+            'LAUNCHLMS_DEVELOPMENT_MODE=false\n'
+            'LAUNCHLMS_ENV=prod\n'
+            'LAUNCHLMS_INTERNAL_BACKEND_URL=http://localhost:9000\n'
+            'NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG=default\n'
+            'LAUNCHLMS_AUTH_JWT_SECRET_KEY=' + 'x'*40 + '\n'
+        )
+
+        def check(path, env):
+            (path/'.env').write_text(base + env)
+            return subprocess.run(
+                [sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, capture_output=True, text=True
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path/'.deployment-environment').write_text('production\n')
+            self.assertEqual(0, check(path, 'LAUNCHLMS_DOMAIN=life2launch.app\n').returncode)
+            ok = 'LAUNCHLMS_DEMO_HOST=demo.life2launch.app\nNEXT_PUBLIC_LAUNCHLMS_DEMO_HOST=demo.life2launch.app\n'
+            self.assertEqual(0, check(path, 'LAUNCHLMS_DOMAIN=life2launch.app\n' + ok).returncode)
+            for bad in (
+                'LAUNCHLMS_DEMO_HOST=demo.life2launch.app\n',
+                'LAUNCHLMS_DEMO_HOST=demo.other.app\nNEXT_PUBLIC_LAUNCHLMS_DEMO_HOST=demo.other.app\n',
+                'LAUNCHLMS_DEMO_HOST=a.demo.life2launch.app\nNEXT_PUBLIC_LAUNCHLMS_DEMO_HOST=a.demo.life2launch.app\n',
+            ):
+                result = check(path, 'LAUNCHLMS_DOMAIN=life2launch.app\n' + bad)
+                self.assertNotEqual(0, result.returncode, bad)
+                self.assertIn('DEMO_HOST', result.stderr)
+            nested = (
+                'LAUNCHLMS_DOMAIN=unstable.life2launch.app\nLAUNCHLMS_COOKIE_SCOPE=host-only\n'
+                'NEXT_PUBLIC_LAUNCHLMS_COOKIE_SCOPE=host-only\nNEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN=life2launch.app\n'
+            )
+            missing = check(path, nested)
+            self.assertIn('Set LAUNCHLMS_DEMO_HOST', missing.stderr)
+            demo = 'LAUNCHLMS_DEMO_HOST=demo.unstable.life2launch.app\nNEXT_PUBLIC_LAUNCHLMS_DEMO_HOST=demo.unstable.life2launch.app\n'
+            self.assertNotIn('DEMO_HOST', check(path, nested + demo).stderr)
+
     def test_edge_secrets_are_excluded_from_application_env(self):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)
