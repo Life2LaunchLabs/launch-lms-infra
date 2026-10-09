@@ -38,40 +38,45 @@ case "$command" in
   capture)
     [[ "$environment" == unstable ]] || { log 'Capture runs on unstable'; exit 1; }
     work=$(mktemp -d)
-    trap 'rm -rf -- "$work"' EXIT
+    destination=$snapshots/unstable-promotion-$run
+    # The snapshot leaves this host only encrypted; once streamed it is not kept here.
+    trap 'rm -rf -- "$work" "$destination"' EXIT
     cat > "$work/public.pem"
     openssl pkey -pubin -in "$work/public.pem" -noout
     [[ -f .deploy-state/last-refresh.json ]] || { log 'Unstable has no recorded refresh; there is no base to merge against'; exit 1; }
     base_digest=$(python3 -c 'import json; print(json.load(open(".deploy-state/last-refresh.json"))["snapshot"]["files"]["database.dump"])')
-    destination=$snapshots/unstable-promotion-$run
     bash scripts/snapshot.sh --promotion-source "$destination" >&2
+    log "Content files captured: $(tar -tzf "$destination/content.tar.gz" | grep -vc '/$')"
+    # Stage by symlink, never by copy: tar -h reads through them.
     mkdir -p "$work/payload"
-    cp -a "$destination" "$work/payload/unstable"
+    ln -s "$destination" "$work/payload/unstable"
     base=$(find_base "$base_digest")
     if [[ -n "$base" ]]; then
-      cp -a "$base" "$work/payload/base"
-      log 'Refresh base found on unstable; included.'
+      mkdir "$work/payload/base"
+      for name in database.dump release.json snapshot.json; do ln -s "$base/$name" "$work/payload/base/$name"; done
+      log 'Refresh base database found on unstable; included.'
     else
       log 'Refresh base not on unstable; production must hold it.'
     fi
     printf '%s\n' "$base_digest" > "$work/payload/base-digest"
     openssl rand 32 > "$work/secret"
-    tar -C "$work/payload" -cf - . | openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:$work/secret" > "$work/bundle.enc"
-    openssl pkeyutl -encrypt -pubin -inkey "$work/public.pem" -pkeyopt rsa_padding_mode:oaep -in "$work/secret" > "$work/secret.enc"
-    tar -C "$work" -cf - bundle.enc secret.enc
+    openssl pkeyutl -encrypt -pubin -inkey "$work/public.pem" -pkeyopt rsa_padding_mode:oaep -in "$work/secret" | base64 -w0
+    printf '\n'
+    tar -C "$work/payload" -chf - . | openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:$work/secret"
     ;;
   receive)
     [[ "$environment" == production ]] || { log 'Receive runs on production'; exit 1; }
     [[ -f "$keys/private.pem" ]] || { log 'No key for this run; run key first'; exit 1; }
-    work=$(mktemp -d)
-    trap 'rm -rf -- "$work"' EXIT
-    tar -C "$work" -xf - bundle.enc secret.enc
-    openssl pkeyutl -decrypt -inkey "$keys/private.pem" -pkeyopt rsa_padding_mode:oaep -in "$work/secret.enc" > "$work/secret"
-    mkdir -p "$work/payload"
-    openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$work/secret" < "$work/bundle.enc" | tar -C "$work/payload" --no-same-owner -xf -
     unstable=$snapshots/unstable-promotion-$run
     [[ ! -e "$unstable" ]] || { log "$unstable already exists"; exit 1; }
     mkdir -p "$snapshots"
+    # Extract on the same filesystem so the final moves are renames, not copies.
+    work=$(mktemp -d "$snapshots/.receive.XXXXXX")
+    trap 'rm -rf -- "$work"' EXIT
+    IFS= read -r wrapped
+    printf '%s' "$wrapped" | base64 -d | openssl pkeyutl -decrypt -inkey "$keys/private.pem" -pkeyopt rsa_padding_mode:oaep > "$work/secret"
+    mkdir "$work/payload"
+    openssl enc -d -aes-256-cbc -pbkdf2 -pass "file:$work/secret" | tar -C "$work/payload" --no-same-owner -xf -
     mv "$work/payload/unstable" "$unstable"
     base=$(find_base "$(cat "$work/payload/base-digest")")
     if [[ -z "$base" && -d "$work/payload/base" ]]; then

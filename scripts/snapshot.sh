@@ -31,6 +31,13 @@ assert u.hostname=='db' and re.fullmatch(allowed, name), 'This helper requires t
 print(name)
 PY
 )
+# Refuse before pausing the app when the dump and archive may not fit; running
+# out of disk mid-snapshot can leave the app unable to restart.
+needed=$(( $(docker compose exec -T db psql -U launchlms -d "$database" -Atc 'SELECT pg_database_size(current_database())') \
+  + $(docker compose run --rm --no-deps -T --entrypoint du migrate -sb /app/api/content | tail -1 | cut -f1) + 2*1024*1024*1024 ))
+mkdir -p "$(dirname "$destination")"
+available=$(df --output=avail -B1 "$(dirname "$destination")" | tail -1)
+(( available > needed )) || { echo "Not enough free disk for a snapshot: need $needed bytes, have $available" >&2; exit 1; }
 umask 077
 mkdir -p "$destination"
 # Restart the same containers even if copying fails. Never apply new config here.

@@ -93,12 +93,12 @@ jobs:
           PUBLIC_KEY: ${{ needs.key.outputs.public_key }}
         run: |
           eval "$SSH_SETUP"
-          printf '%s\n' "$PUBLIC_KEY" | remote "bash /opt/launch-lms/scripts/promotion-transfer.sh capture ${{ github.run_id }}" > encrypted-bundle.tar
-          tar -tf encrypted-bundle.tar
+          printf '%s\n' "$PUBLIC_KEY" | remote "bash /opt/launch-lms/scripts/promotion-transfer.sh capture ${{ github.run_id }}" > encrypted-bundle.bin
+          test "$(head -c 1 encrypted-bundle.bin | wc -c)" = 1 && ls -l encrypted-bundle.bin | awk '{print "Encrypted bundle bytes:", $5}'
       - uses: actions/upload-artifact@v4
         with:
           name: encrypted-promotion-bundle
-          path: encrypted-bundle.tar
+          path: encrypted-bundle.bin
           if-no-files-found: error
           retention-days: 1
   promote:
@@ -126,7 +126,7 @@ jobs:
         run: |
           eval "$SSH_SETUP"
           if [[ "$MODE" == dry-run ]]; then
-            remote "bash /opt/launch-lms/scripts/promotion-transfer.sh receive $SOURCE_RUN" < encrypted-bundle.tar
+            remote "bash /opt/launch-lms/scripts/promotion-transfer.sh receive $SOURCE_RUN" < encrypted-bundle.bin
           fi
           flags=()
           [[ "$MODE" == apply ]] && flags+=(--apply)

@@ -214,6 +214,13 @@ class PromotionWorkflowTests(unittest.TestCase):
         self.assertIn('[[ "$environment" == production ]]', transfer)
         self.assertNotIn('report.json"', workflow)
 
+    def test_snapshot_checks_disk_before_pausing_the_app(self):
+        snapshot = (ROOT/'scripts/snapshot.sh').read_text()
+        self.assertLess(snapshot.index('Not enough free disk'), snapshot.index('docker compose stop'))
+        transfer = (ROOT/'scripts/promotion-transfer.sh').read_text()
+        self.assertNotIn('cp -a', transfer)
+        self.assertIn('trap \'rm -rf -- "$work" "$destination"\' EXIT', transfer)
+
     def test_public_summary_has_no_emails(self):
         module = load()
         report = {'tables': {}, 'new_users': ['person@example.org'], 'warnings': [], 'excluded_tables': []}
