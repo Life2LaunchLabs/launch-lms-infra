@@ -144,17 +144,11 @@ class Schema:
         self.skipped = sorted(set(metadata.tables) - set(self.tables))
         self.deferred = defaultdict(set)  # table -> FK columns written after all inserts
         tables = list(metadata.tables.values())
-        # Ids inside JSON are references too: their targets must be written first.
-        extra = []
-        for (name, _), keys in JSON_REFERENCES.items():
-            targets = set(keys.values()) | ({t for _, t in ID_SIBLINGS} if "id" not in keys and keys is SNAPSHOT_KEYS else set())
-            extra += [(metadata.tables[t], metadata.tables[name]) for t in targets
-                      if t != name and t in metadata.tables and name in metadata.tables]
         # Break each cycle on a nullable reference: insert NULL, then set it last.
         deferred = set()
         while True:
             result = list(sort_tables_and_constraints(
-                tables, filter_fn=lambda c: True if c in deferred else None, extra_dependencies=extra))
+                tables, filter_fn=lambda c: True if c in deferred else None))
             cyclic = [c for t, constraints in result if t is None for c in constraints or () if c not in deferred]
             if not cyclic:
                 break
@@ -167,6 +161,11 @@ class Schema:
         for constraint in deferred:
             self.deferred[constraint.table.name].update(column.name for column in constraint.columns)
         self.order = [name for name in ordered if name in self.tables]
+        # Ids inside JSON can point "backwards" (a program's snapshot names its
+        # phases), so these columns are written last, once every row exists.
+        for (name, column) in JSON_REFERENCES:
+            if name in metadata.tables:
+                self.deferred[name].add(column)
         self.fks = {}
         for name, table in self.tables.items():
             self.fks[name] = {}
@@ -460,9 +459,13 @@ class Promotion:
         return True
 
     def insert(self, name, key, u_row, deferred, report):
-        values = {c: v for c, v in u_row.items() if c not in deferred}
-        if not self.check_json(name, values, report, key):
+        if not self.check_json(name, u_row, report, key):
             return
+        values = {c: v for c, v in u_row.items() if c not in deferred}
+        table = self.schema.tables[name]
+        for column in deferred & set(u_row):
+            if u_row[column] is not None and not table.c[column].nullable:
+                values[column] = [] if isinstance(u_row[column], list) else {}  # Replaced in the final pass.
         try:
             concrete, notes = self.concrete(name, values)
         except LookupError as error:
@@ -486,9 +489,9 @@ class Promotion:
     def update(self, name, key, p_id, changes, deferred, report):
         now = {c: v for c, v in changes.items() if c not in deferred}
         later = {c: v for c, v in changes.items() if c in deferred}
+        if not self.check_json(name, changes, report, key):
+            return
         if now:
-            if not self.check_json(name, now, report, key):
-                return
             try:
                 concrete, notes = self.concrete(name, now)
             except LookupError as error:
