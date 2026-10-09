@@ -204,8 +204,18 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn('handle @unstable_session', result)
             self.assertIn('Domain=.test.example.net', result)
             self.assertIn('request_header -Authorization', result)
-            self.assertEqual(2, result.count('import launch_lms_proxy'))
+            self.assertEqual(3, result.count('import launch_lms_proxy'))
             self.assertNotIn('__LAUNCHLMS_ROUTES__', result)
+            # Claude's connector endpoints bypass the tester gate; nothing else does.
+            connector = next(line for line in result.splitlines() if line.strip().startswith('@connector path'))
+            self.assertEqual(
+                connector.split()[2:],
+                ['/.well-known/oauth-authorization-server', '/.well-known/oauth-authorization-server/*',
+                 '/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/*',
+                 '/api/v1/oauth/register', '/api/v1/oauth/token', '/api/v1/oauth/revoke',
+                 '/api/v1/mcp', '/api/v1/mcp/*'],
+            )
+            self.assertLess(result.index('handle @connector'), result.index('basic_auth'))
 
     def test_legacy_unstable_host_only_exposes_nested_domain_tls_preflight(self):
         password_hash = '$2a$14$' + 'a'*53
