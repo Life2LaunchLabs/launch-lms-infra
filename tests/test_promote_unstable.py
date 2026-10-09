@@ -53,6 +53,10 @@ def schema():
     Table('programassignment', metadata, Column('id', Integer, primary_key=True),
           Column('assignment_uuid', String, unique=True),
           Column('objective_snapshot', JSON), Column('staff_user_ids', JSON))
+    Table('program', metadata, Column('id', Integer, primary_key=True),
+          Column('program_uuid', String, unique=True), Column('library_snapshot', JSON))
+    Table('programphase', metadata, Column('id', Integer, primary_key=True),
+          Column('phase_uuid', String, unique=True), Column('program_id', ForeignKey('program.id'), nullable=False))
     Table('apitoken', metadata, Column('id', Integer, primary_key=True), Column('token_hash', String))
     Table('learningrun', metadata, Column('id', Integer, primary_key=True), Column('run_uuid', String, unique=True))
     return metadata
@@ -109,6 +113,10 @@ class PromoteUnstableTests(unittest.TestCase):
             c.execute(t['programassignment'].insert(), [{'id': 1, 'assignment_uuid': 'a1',
                 'objective_snapshot': [{'id': 1, 'objective_uuid': 'o1', 'badge_id': 3}], 'staff_user_ids': [1, 3]}])
             c.execute(t['apitoken'].insert(), [{'id': 1, 'token_hash': 'secret'}])
+            # A program's snapshot names its own phases: a JSON reference against FK order.
+            c.execute(t['program'].insert(), [{'id': 1, 'program_uuid': 'p1', 'library_snapshot': None}])
+            c.execute(t['programphase'].insert(), [{'id': 1, 'phase_uuid': 'ph1', 'program_id': 1}])
+            c.execute(t['program'].update().values(library_snapshot={'phases': [{'id': 1, 'phase_uuid': 'ph1'}]}))
             c.execute(t['learningrun'].insert(), [{'id': 1, 'run_uuid': 'tester-run'}])
 
     def engine(self, label):
@@ -170,6 +178,16 @@ class PromoteUnstableTests(unittest.TestCase):
         # Promotion is idempotent.
         again = self.promote('--apply')
         self.assertTrue(all(entry['inserted'] == 0 and entry['updated'] == 0 for entry in again['tables'].values()))
+
+    def test_json_ids_pointing_against_foreign_key_order_are_written_last(self):
+        with self.urls['production'].begin() as c:  # Shift production ids so a stale id would show.
+            c.execute(self.metadata.tables['program'].insert(), [{'id': 7, 'program_uuid': 'prod-only'}])
+            c.execute(self.metadata.tables['programphase'].insert(), [{'id': 7, 'phase_uuid': 'prod-ph', 'program_id': 7}])
+        self.promote('--apply')
+        phase_id = dict(self.rows('programphase', 'phase_uuid', 'id'))['ph1']
+        snapshot = dict(self.rows('program', 'program_uuid', 'library_snapshot'))['p1']
+        self.assertNotEqual(phase_id, 1)
+        self.assertEqual(snapshot, {'phases': [{'id': phase_id, 'phase_uuid': 'ph1'}]})
 
     def test_deletions_need_explicit_opt_in(self):
         report = self.promote('--apply')
