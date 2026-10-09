@@ -221,6 +221,15 @@ class PromotionWorkflowTests(unittest.TestCase):
         self.assertNotIn('cp -a', transfer)
         self.assertIn('trap \'rm -rf -- "$work" "$destination"\' EXIT', transfer)
 
+    def test_base_from_before_a_domain_move_maps_urls_to_its_own_domain(self):
+        wrapper = (ROOT/'scripts/promote-unstable.sh').read_text()
+        self.assertIn("base_domain in (env['LAUNCHLMS_DOMAIN'], env.get('LAUNCHLMS_LEGACY_DOMAIN'))", wrapper)
+        self.assertIn("'--production-domain', base_domain", wrapper)
+        module = load()
+        mapped = module.reverse_urls('https://org.unstable.example.app/x https://example.app/y https://old.dev/z',
+                                     ['unstable.example.app', 'old.dev'], 'legacy.com')
+        self.assertEqual(mapped, 'https://org.legacy.com/x https://example.app/y https://legacy.com/z')
+
     def test_public_summary_has_no_emails(self):
         module = load()
         report = {'tables': {}, 'new_users': ['person@example.org'], 'warnings': [], 'excluded_tables': []}

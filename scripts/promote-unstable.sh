@@ -46,7 +46,10 @@ for label, path in (('base', base), ('unstable', unstable)):
         with (path/name).open('rb') as file:
             assert hashlib.file_digest(file, 'sha256').hexdigest() == meta['files'][name], f'{label} snapshot checksum mismatch: {name}'
     metas[label] = meta
-assert metas['base']['source_domain'] == env['LAUNCHLMS_DOMAIN'], 'The base must be a snapshot of this production installation'
+# The base may predate a production domain move; its domain then survives as the legacy domain.
+base_domain = metas['base']['source_domain']
+assert base_domain in (env['LAUNCHLMS_DOMAIN'], env.get('LAUNCHLMS_LEGACY_DOMAIN')), 'The base must be a snapshot of this production installation'
+print(f'URLs on unstable map back to {base_domain}, the domain the refresh rewrote from.', file=sys.stderr)
 assert metas['unstable'].get('environment') == 'unstable', 'Take the unstable side with snapshot.sh --promotion-source on unstable'
 assert metas['base']['created_at'] < metas['unstable']['created_at'], 'The unstable snapshot must be newer than its refresh base'
 with tarfile.open(unstable/'content.tar.gz') as archive:
@@ -61,7 +64,7 @@ database = lambda name: urlunsplit(url._replace(path='/'+name))
 domains = [metas['unstable']['source_domain'], *metas['unstable'].get('legacy_domains', [])]
 print(database(f'launchlms_promote_base_{stamp}'), database(f'launchlms_promote_unstable_{stamp}'),
       *[arg for domain in domains for arg in ('--unstable-domain', domain)],
-      '--production-domain', env['LAUNCHLMS_DOMAIN'])
+      '--production-domain', base_domain)
 PY
 )
 read -r -a plan_args <<< "$plan"
