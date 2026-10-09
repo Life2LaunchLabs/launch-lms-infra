@@ -12,7 +12,7 @@ on:
         default: dry-run
         required: true
       source_run_id:
-        description: Run id of the reviewed dry run whose unstable snapshot to apply (apply only)
+        description: Run id whose already transferred unstable snapshot to reuse (required for apply; optional for dry-run)
         required: false
       allow_new_users:
         type: boolean
@@ -54,11 +54,11 @@ jobs:
           SOURCE_RUN_ID: ${{ inputs.source_run_id }}
           PREFER: ${{ inputs.prefer_unstable }}
         run: |
-          if [[ "$MODE" == apply ]]; then [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; else [[ -z "$SOURCE_RUN_ID" ]]; fi
+          if [[ "$MODE" == apply ]]; then [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; else [[ -z "$SOURCE_RUN_ID" || "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; fi
           [[ -z "$PREFER" || "$PREFER" =~ ^[a-z_]+( [a-z_]+)*$ ]]
   key:
     needs: validate
-    if: inputs.mode == 'dry-run'
+    if: inputs.mode == 'dry-run' && inputs.source_run_id == ''
     runs-on: ubuntu-latest
     environment: production
     outputs:
@@ -103,11 +103,11 @@ jobs:
           retention-days: 1
   promote:
     needs: [validate, capture]
-    if: always() && needs.validate.result == 'success' && (inputs.mode == 'apply' || needs.capture.result == 'success')
+    if: always() && needs.validate.result == 'success' && (inputs.source_run_id != '' || needs.capture.result == 'success')
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - if: inputs.mode == 'dry-run'
+      - if: inputs.source_run_id == ''
         uses: actions/download-artifact@v4
         with:
           name: encrypted-promotion-bundle
@@ -118,14 +118,15 @@ jobs:
           SSH_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
           INFRA_REVISION: ${{ github.sha }}
           MODE: ${{ inputs.mode }}
-          SOURCE_RUN: ${{ inputs.mode == 'apply' && inputs.source_run_id || github.run_id }}
+          SOURCE_RUN: ${{ inputs.source_run_id || github.run_id }}
+          REUSE: ${{ inputs.source_run_id != '' }}
           ALLOW_NEW_USERS: ${{ inputs.allow_new_users }}
           APPLY_DELETES: ${{ inputs.apply_deletes }}
           INCLUDE_ACTIVITY: ${{ inputs.include_learner_activity }}
           PREFER: ${{ inputs.prefer_unstable }}
         run: |
           eval "$SSH_SETUP"
-          if [[ "$MODE" == dry-run ]]; then
+          if [[ "$REUSE" != true ]]; then
             remote "bash /opt/launch-lms/scripts/promotion-transfer.sh receive $SOURCE_RUN" < encrypted-bundle.bin
           fi
           flags=()
