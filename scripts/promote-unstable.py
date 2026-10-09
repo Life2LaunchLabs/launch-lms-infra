@@ -625,8 +625,8 @@ def summarize(report):
                      f"skipped {len(entry['skipped']):<4} removed-on-unstable {len(entry['deleted_on_unstable']):<4} "
                      f"removed-on-prod {entry['deleted_on_production']}")
     if report["new_users"]:
-        lines.append(f"{len(report['new_users'])} unstable-only accounts not copied (use --allow-new-users): "
-                     + ", ".join(report["new_users"][:20]))
+        # Counts only: this summary reaches public Actions logs. Emails stay in the report.
+        lines.append(f"{len(report['new_users'])} unstable-only accounts not copied (use --allow-new-users)")
     if report["warnings"]:
         lines.append(f"{len(report['warnings'])} warnings (see report)")
     if "content" in report:

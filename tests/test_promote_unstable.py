@@ -201,5 +201,24 @@ class PromoteUnstableTests(unittest.TestCase):
         self.assertEqual((target/'orgs/new.png').read_bytes(), b'new')
 
 
+class PromotionWorkflowTests(unittest.TestCase):
+    def test_transfer_is_encrypted_short_lived_and_serialized_with_deploys(self):
+        workflow = (ROOT/'.github/workflows/promote-unstable.yaml').read_text()
+        transfer = (ROOT/'scripts/promotion-transfer.sh').read_text()
+        self.assertIn('group: deploy-production', workflow)
+        self.assertIn('group: deploy-unstable', workflow)
+        self.assertIn('retention-days: 1', workflow)
+        self.assertIn('StrictHostKeyChecking=yes', workflow)
+        self.assertIn('git merge-base --is-ancestor $INFRA_REVISION origin/main', workflow)
+        self.assertIn('openssl pkeyutl -encrypt -pubin', transfer)
+        self.assertIn('[[ "$environment" == production ]]', transfer)
+        self.assertNotIn('report.json"', workflow)
+
+    def test_public_summary_has_no_emails(self):
+        module = load()
+        report = {'tables': {}, 'new_users': ['person@example.org'], 'warnings': [], 'excluded_tables': []}
+        self.assertNotIn('person@example.org', module.summarize(report))
+
+
 if __name__ == '__main__':
     unittest.main()

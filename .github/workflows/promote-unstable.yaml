@@ -1,0 +1,137 @@
+name: Promote unstable work
+# Merges content authored on unstable into production (README: "Promote
+# unstable work to production"). Run dry-run first; apply reuses that run's
+# unstable snapshot by passing its run id. Logs show counts only; the full
+# report stays on the production host. This repository's logs are public.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [dry-run, apply]
+        default: dry-run
+        required: true
+      source_run_id:
+        description: Run id of the reviewed dry run whose unstable snapshot to apply (apply only)
+        required: false
+      allow_new_users:
+        type: boolean
+        default: false
+      apply_deletes:
+        type: boolean
+        default: false
+      include_learner_activity:
+        type: boolean
+        default: false
+      prefer_unstable:
+        description: Space-separated tables whose conflicts take the unstable value
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+env:
+  SSH_SETUP: |
+    install -m 700 -d ~/.ssh
+    printf '%s\n' "$SSH_KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+    ssh-keyscan -T 20 "$SSH_HOST" 2>/dev/null > /tmp/scanned
+    while read -r line; do
+      printf '%s\n' "$line" > /tmp/one
+      if ssh-keygen -lf /tmp/one -E sha256 | grep -qF "$SSH_FINGERPRINT"; then printf '%s\n' "$line" >> ~/.ssh/known_hosts; fi
+    done < /tmp/scanned
+    test -s ~/.ssh/known_hosts
+    remote() { ssh -i ~/.ssh/id -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o BatchMode=yes -o ServerAliveInterval=30 "$SSH_USER@$SSH_HOST" "$@"; }
+    # Run host scripts from this exact, already merged infra revision.
+    remote "set -eu; cd /opt/launch-lms; test -z \"\$(git status --porcelain --untracked-files=no)\"; git fetch -q origin main; git merge-base --is-ancestor $INFRA_REVISION origin/main; flock -w 1800 .deploy.lock git checkout -q --detach $INFRA_REVISION"
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          PREFER: ${{ inputs.prefer_unstable }}
+        run: |
+          if [[ "$MODE" == apply ]]; then [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]]; else [[ -z "$SOURCE_RUN_ID" ]]; fi
+          [[ -z "$PREFER" || "$PREFER" =~ ^[a-z_]+( [a-z_]+)*$ ]]
+  key:
+    needs: validate
+    if: inputs.mode == 'dry-run'
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      public_key: ${{ steps.key.outputs.public_key }}
+    steps:
+      - id: key
+        env:
+          SSH_HOST: ${{ secrets.DROPLET_HOST }}
+          SSH_USER: ${{ secrets.DROPLET_USER }}
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          INFRA_REVISION: ${{ github.sha }}
+        run: |
+          eval "$SSH_SETUP"
+          remote "bash /opt/launch-lms/scripts/promotion-transfer.sh key ${{ github.run_id }}" > public.pem
+          openssl pkey -pubin -in public.pem -noout
+          { echo 'public_key<<EOF'; cat public.pem; echo EOF; } >> "$GITHUB_OUTPUT"
+  capture:
+    needs: key
+    runs-on: ubuntu-latest
+    environment: unstable
+    concurrency:
+      group: deploy-unstable
+      cancel-in-progress: false
+    steps:
+      - env:
+          SSH_HOST: ${{ secrets.DROPLET_HOST }}
+          SSH_USER: ${{ secrets.DROPLET_USER }}
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          INFRA_REVISION: ${{ github.sha }}
+          PUBLIC_KEY: ${{ needs.key.outputs.public_key }}
+        run: |
+          eval "$SSH_SETUP"
+          printf '%s\n' "$PUBLIC_KEY" | remote "bash /opt/launch-lms/scripts/promotion-transfer.sh capture ${{ github.run_id }}" > encrypted-bundle.tar
+          tar -tf encrypted-bundle.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: encrypted-promotion-bundle
+          path: encrypted-bundle.tar
+          if-no-files-found: error
+          retention-days: 1
+  promote:
+    needs: [validate, capture]
+    if: always() && needs.validate.result == 'success' && (inputs.mode == 'apply' || needs.capture.result == 'success')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - if: inputs.mode == 'dry-run'
+        uses: actions/download-artifact@v4
+        with:
+          name: encrypted-promotion-bundle
+      - env:
+          SSH_HOST: ${{ secrets.DROPLET_HOST }}
+          SSH_USER: ${{ secrets.DROPLET_USER }}
+          SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          SSH_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          INFRA_REVISION: ${{ github.sha }}
+          MODE: ${{ inputs.mode }}
+          SOURCE_RUN: ${{ inputs.mode == 'apply' && inputs.source_run_id || github.run_id }}
+          ALLOW_NEW_USERS: ${{ inputs.allow_new_users }}
+          APPLY_DELETES: ${{ inputs.apply_deletes }}
+          INCLUDE_ACTIVITY: ${{ inputs.include_learner_activity }}
+          PREFER: ${{ inputs.prefer_unstable }}
+        run: |
+          eval "$SSH_SETUP"
+          if [[ "$MODE" == dry-run ]]; then
+            remote "bash /opt/launch-lms/scripts/promotion-transfer.sh receive $SOURCE_RUN" < encrypted-bundle.tar
+          fi
+          flags=()
+          [[ "$MODE" == apply ]] && flags+=(--apply)
+          [[ "$ALLOW_NEW_USERS" == true ]] && flags+=(--allow-new-users)
+          [[ "$APPLY_DELETES" == true ]] && flags+=(--apply-deletes)
+          [[ "$INCLUDE_ACTIVITY" == true ]] && flags+=(--include-learner-activity)
+          for table in $PREFER; do flags+=(--prefer-unstable "$table"); done
+          remote "set -eu; cd /opt/launch-lms; bash scripts/promote-unstable.sh --base \"\$(cat /root/launch-promotion/$SOURCE_RUN/base)\" --unstable /root/launch-snapshots/unstable-promotion-$SOURCE_RUN ${flags[*]}"
