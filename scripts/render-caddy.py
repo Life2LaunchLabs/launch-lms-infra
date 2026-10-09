@@ -22,7 +22,16 @@ if deployment_environment == 'unstable':
         raise ValueError('Unstable requires a tester HTTP username and bcrypt password hash')
     session = hashlib.sha256(f'{domain}\0{password_hash}'.encode()).hexdigest()
     cookie = f'launchlms_unstable_gate={session}; Domain=.{domain}; Path=/; Max-Age=43200; Secure; HttpOnly; SameSite=Lax'
-    routes = f'''@unstable_session header_regexp Cookie "(^|; *)launchlms_unstable_gate={session}(;|$)"
+    # Claude's connector servers cannot pass the tester gate, so the endpoints
+    # they call stay reachable. Each authenticates on its own: OAuth metadata is
+    # public, registration/token/revoke follow OAuth 2.1, and /api/v1/mcp only
+    # accepts connector Bearer tokens. The consent page runs in the tester's
+    # browser and stays behind the gate.
+    routes = f'''@connector path /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /api/v1/oauth/register /api/v1/oauth/token /api/v1/oauth/revoke /api/v1/mcp /api/v1/mcp/*
+    handle @connector {{
+        import launch_lms_proxy
+    }}
+    @unstable_session header_regexp Cookie "(^|; *)launchlms_unstable_gate={session}(;|$)"
     handle @unstable_session {{
         import launch_lms_proxy
     }}
