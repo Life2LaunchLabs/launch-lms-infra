@@ -40,7 +40,9 @@ env = read_env(Path('.env'))
 metas = {}
 for label, path in (('base', base), ('unstable', unstable)):
     meta = json.loads((path/'snapshot.json').read_text())
-    for name in ('database.dump', 'content.tar.gz', 'release.json'):
+    # The merge reads only the base's database; its content archive may be left behind.
+    names = ('database.dump', 'content.tar.gz', 'release.json') if label == 'unstable' else ('database.dump', 'release.json')
+    for name in names:
         with (path/name).open('rb') as file:
             assert hashlib.file_digest(file, 'sha256').hexdigest() == meta['files'][name], f'{label} snapshot checksum mismatch: {name}'
     metas[label] = meta
