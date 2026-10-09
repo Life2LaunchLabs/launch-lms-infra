@@ -399,7 +399,8 @@ before extending the helper. It pauses production app/Caddy while copying to
 keep database and files consistent. Schedule a short maintenance window and
 ensure no other writers access the database/storage.
 
-1. On production, create a new private snapshot directory **outside the repo**:
+1. On production, create a new private snapshot directory **outside the repo**.
+   Keep it: it is the base for any later promotion of unstable work.
    ```bash
    cd /opt/launch-lms
    bash scripts/snapshot.sh --maintenance-window /root/launch-snapshots/2026-09-08
@@ -442,6 +443,74 @@ work and briefly pauses production for export. After a few rehearsals you can
 schedule an agreed maintenance/reset window. Monitor disk growth; retained
 snapshots and old test databases/volumes need an explicit retention policy.
 Never use `docker compose down -v` to clean up this installation.
+
+## Promote unstable work to production
+
+Use this when people authored content on unstable (badges and badge edits,
+programs, plans, resources, portfolios, …) that must survive a release, instead
+of re-entering it on production. It is a **three-way merge**, not a copy:
+
+| Input | Where it comes from |
+| --- | --- |
+| Base | The production snapshot unstable was last refreshed from (`last-refresh.json` on unstable names it) |
+| Production | The live production database, already migrated to the release that matches unstable |
+| Unstable | A new unstable snapshot taken with `snapshot.sh --promotion-source` |
+
+Rows are matched by their `*_uuid` (or natural key), never by integer id, and
+references (including known ids inside JSON snapshots) are re-pointed to
+production ids. Per column: changed only on unstable → taken; changed only on
+production → kept; changed on both → conflict, production kept and reported
+(`--prefer-unstable TABLE` flips that per table). Unstable-only rows are
+inserted; production-only rows are never touched. Rows deleted on unstable are
+reported and removed only with `--apply-deletes`, and only when production left
+them unchanged. URLs pointing at the unstable domains are rewritten back to the
+production domain. Uploaded files that production lacks are copied; production
+files are never overwritten.
+
+Never copied: credentials and integrations (API tokens, OAuth, SSO, payments,
+custom domains, packs, hub provider keys), invitations/join links, guest
+sessions, demo checkpoints/sessions, inbox messages, audit/usage logs and the
+derived resource-search index (rebuilt by the backfill). Tester activity —
+learning runs, progress, attempts, awards, hub conversations and memory — is
+excluded unless `--include-learner-activity`. Accounts that exist only on
+unstable are listed but not created unless `--allow-new-users`; their optional
+references become NULL and rows that require them are skipped. Accounts are
+matched by uuid, then by email.
+
+1. Deploy the release to production first (normal infra lock PR). Unstable must
+   run the same release, or an older one; the script migrates both copies to
+   this release's schema and refuses a newer unstable schema.
+2. On unstable, take the promotion source and copy it to production:
+   ```bash
+   cd /opt/launch-lms
+   bash scripts/snapshot.sh --promotion-source /root/launch-snapshots/unstable-2026-10-09
+   scp -r /root/launch-snapshots/unstable-2026-10-09 root@PRODUCTION_IP:/root/launch-snapshots/
+   ```
+   Freeze authoring on unstable from this point; later edits are not included.
+3. On production, dry-run. Nothing changes; every insert and update is executed
+   inside a transaction that is rolled back, so constraint problems show up now:
+   ```bash
+   cd /opt/launch-lms
+   bash scripts/promote-unstable.sh --base /root/launch-snapshots/REFRESH-BASE \
+     --unstable /root/launch-snapshots/unstable-2026-10-09
+   ```
+   Read `.deploy-state/promotion-*/report.json`: per-table inserts, updates,
+   conflicts with base/production/unstable values, skipped rows with reasons,
+   rows removed on either side, accounts not copied, and file conflicts. Rows with
+   integer ids inside JSON that the script cannot translate are skipped and
+   named; review them before considering `--accept-unmapped-json`.
+4. Apply with the options the review settled on, in a short maintenance window:
+   ```bash
+   bash scripts/promote-unstable.sh --base ... --unstable ... --apply [--apply-deletes]
+   ```
+   The script pauses the app, writes a recovery point to
+   `/root/launch-snapshots/pre-promotion-TIMESTAMP`, commits in one transaction,
+   copies files, restarts, verifies and rebuilds the search index. Re-running it
+   is safe: already promoted rows are unchanged. To undo, restore the recovery
+   point as in the recovery section below.
+
+Re-capture the demo checkpoint on production afterwards if the demo is used;
+checkpoints hold unstable ids and are never copied.
 
 ## Updates, diagnosis, and recovery
 
