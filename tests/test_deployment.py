@@ -142,6 +142,15 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn('app-key',result)
             self.assertIn('collab-key',result)
 
+    def test_application_env_always_serves_https_urls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            (path/'.env').write_text("LAUNCHLMS_SSL=false\nLAUNCHLMS_DOMAIN=test.example.net\n")
+            subprocess.run([sys.executable,str(ROOT/'scripts/render-app-env.py')],cwd=path,check=True)
+            result=(path/'.deploy-state/app.env').read_text()
+            self.assertIn("LAUNCHLMS_SSL='true'",result)
+            self.assertNotIn("LAUNCHLMS_SSL='false'",result)
+
     def test_unstable_application_egress_requires_explicit_switch(self):
         isolated=(ROOT/'docker-compose.unstable.yml').read_text()
         opt_in=(ROOT/'docker-compose.unstable-app-egress.yml').read_text()
