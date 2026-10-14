@@ -13,6 +13,18 @@ if env.get('LAUNCHLMS_DOMAIN') == topology['application']['unstable']['base_doma
         raise ValueError('Nested unstable must expire legacy cookies from the application parent domain')
     if not topology['application']['unstable']['cutover_approved']:
         raise ValueError('Nested unstable application cutover has not been approved')
+    # Without it, demo links and QR codes made on unstable point at production's demo host.
+    if not env.get('LAUNCHLMS_DEMO_HOST'):
+        raise ValueError('Set LAUNCHLMS_DEMO_HOST (demo.<domain>) on nested unstable')
+demo_host = env.get('LAUNCHLMS_DEMO_HOST', '')
+if demo_host or env.get('NEXT_PUBLIC_LAUNCHLMS_DEMO_HOST'):
+    if env.get('NEXT_PUBLIC_LAUNCHLMS_DEMO_HOST') != demo_host:
+        raise ValueError('NEXT_PUBLIC_LAUNCHLMS_DEMO_HOST must equal LAUNCHLMS_DEMO_HOST')
+    domain = env.get('LAUNCHLMS_DOMAIN', '')
+    label = demo_host[:-len(domain) - 1] if domain and demo_host.endswith('.' + domain) else ''
+    # The wildcard certificate covers exactly one label beneath the base domain.
+    if not label or '.' in label:
+        raise ValueError('LAUNCHLMS_DEMO_HOST must be one label under LAUNCHLMS_DOMAIN, e.g. demo.' + (domain or '<domain>'))
 if env.get('LAUNCHLMS_DEVELOPMENT_MODE') != 'false' or env.get('LAUNCHLMS_ENV') != 'prod':
     raise ValueError('Both environments must use production runtime mode')
 if env.get('LAUNCHLMS_INTERNAL_BACKEND_URL') != 'http://localhost:9000':

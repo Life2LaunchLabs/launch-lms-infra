@@ -40,6 +40,9 @@ values = {
     # lifetime has elapsed and browser evidence confirms parent-cookie expiry.
     'NEXT_PUBLIC_LAUNCHLMS_LEGACY_COOKIE_DOMAIN': topology['dns']['app_zone'],
     'NEXT_PUBLIC_LAUNCHLMS_TOP_DOMAIN': domain,
+    # Disposable demo visits run on their own host under the wildcard certificate.
+    'LAUNCHLMS_DEMO_HOST': 'demo.'+domain,
+    'NEXT_PUBLIC_LAUNCHLMS_DEMO_HOST': 'demo.'+domain,
     'NEXT_PUBLIC_LAUNCHLMS_API_URL': '',
     'NEXT_PUBLIC_LAUNCHLMS_BACKEND_URL': f'https://{domain}/',
     'LAUNCHLMS_INTERNAL_API_URL': 'http://localhost/api/v1/',
