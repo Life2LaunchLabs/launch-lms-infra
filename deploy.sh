@@ -21,6 +21,11 @@ if [[ -n "${GHCR_TOKEN:-}" ]]; then
 fi
 python3 scripts/render-caddy.py
 cp "$RELEASE_LOCK" .deploy-state/attempted-release.json
+# Every candidate is a new pinned image, and old ones otherwise pile up until a
+# pull fails with "no space left on device". Remove images no container uses (the
+# running release keeps its own); a rollback pulls its pinned image again.
+docker image prune -af
+docker builder prune -f
 if ! docker pull "$LAUNCHLMS_IMAGE"; then
   # A bootstrapped legacy host may no longer have registry credentials. A local
   # image is acceptable only under the validated digest reference; verification
