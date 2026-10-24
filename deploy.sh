@@ -39,9 +39,17 @@ fi
 docker compose build caddy
 docker compose up -d --wait db redis embeddings
 docker compose exec -T embeddings ollama pull all-minilm:33m
-# Existing production image stays running if migrations fail. Schema changes can
-# still affect it: back up before incompatible migrations (see README).
-docker compose run --rm migrate
+# Stop the app while migrating: a migration that alters a table the running app
+# holds open waits on its lock and queues every query on that table behind it,
+# which freezes the site. If migrations fail, the previous release starts again
+# on the schema the failed migration rolled back to. Schema changes can still
+# affect it: back up before incompatible migrations (see README).
+docker compose stop launch-lms
+if ! docker compose run --rm migrate; then
+  echo 'Migrations failed; starting the previous release again.' >&2
+  docker compose start launch-lms || true
+  exit 1
+fi
 if [[ -f .deploy-state/deployed-release.json ]]; then
   cp .deploy-state/deployed-release.json .deploy-state/previous-release.json
 fi
