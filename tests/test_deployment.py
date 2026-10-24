@@ -50,6 +50,15 @@ class DeploymentTests(unittest.TestCase):
         return dict(image_repository=repo, image_digest=digest, image_ref=repo+'@'+digest,
             commit_sha='b'*40, source_branch=branch, version='v1.2.3', build_run_id='100')
 
+    def test_app_stops_before_migrations_and_restarts_if_they_fail(self):
+        script = (ROOT/'deploy.sh').read_text()
+        stop = script.index('docker compose stop launch-lms')
+        migrate = script.index('docker compose run --rm migrate')
+        self.assertLess(stop, migrate)
+        failure = script[migrate:script.index('\nfi\n', migrate)]
+        self.assertIn('docker compose start launch-lms', failure)
+        self.assertIn('exit 1', failure)
+
     def test_environment_lock_cannot_cross_deploy(self):
         module = load('release-env')
         module.validate(self.lock(), 'unstable')
