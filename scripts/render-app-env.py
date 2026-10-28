@@ -7,7 +7,7 @@ from env_file import read_env
 source = Path(sys.argv[1]) if len(sys.argv)>1 else Path('.env')
 target = Path(sys.argv[2]) if len(sys.argv)>2 else Path('.deploy-state/app.env')
 env = read_env(source)
-values = {k:v for k,v in env.items() if k.startswith(('LAUNCHLMS_', 'NEXT_PUBLIC_', 'AWS_')) or k == 'COLLAB_INTERNAL_KEY'}
+values = {k:v for k,v in env.items() if k.startswith(('LAUNCHLMS_', 'NEXT_PUBLIC_', 'AWS_', 'PEXELS_')) or k == 'COLLAB_INTERNAL_KEY'}
 # Caddy terminates TLS for every deployed environment, so the app's public
 # URLs (OAuth issuer, SSO callbacks, email and preview links) are always https.
 # Older .env files say LAUNCHLMS_SSL=false, which the app now reads literally.

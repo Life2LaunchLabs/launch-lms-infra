@@ -66,6 +66,29 @@ if docker compose exec -T launch-lms test -f /app/api/scripts/backfill_resource_
 else
   echo 'Pinned legacy image has no resource-search backfill; skipping.'
 fi
+# One-time upgrade steps. Each runs once per host after a release that has it
+# and leaves a marker in .deploy-state; delete the marker to run it again.
+# Copy uploads from the content volume into the bucket once storage is s3api
+# (files already in the bucket are skipped).
+if [[ ! -f .deploy-state/content-synced-to-s3 ]] \
+  && grep -Eq "^LAUNCHLMS_CONTENT_DELIVERY_TYPE='?s3api'?$" .deploy-state/app.env \
+  && docker compose exec -T launch-lms test -f /app/api/scripts/sync_content_to_s3.py; then
+  if docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python scripts/sync_content_to_s3.py'; then
+    touch .deploy-state/content-synced-to-s3
+  else
+    echo 'Copying uploads to the bucket failed; the next deploy tries again.' >&2
+  fi
+fi
+# Move activities to sequences and version 3 pages. What it replaces is kept,
+# and `cli.py migrate-learning-content --restore` puts it back.
+if [[ ! -f .deploy-state/learning-content-migrated ]] \
+  && docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python cli.py migrate-learning-content --help' >/dev/null 2>&1; then
+  if docker compose exec -T launch-lms sh -lc 'cd /app/api && uv run python cli.py migrate-learning-content --apply'; then
+    touch .deploy-state/learning-content-migrated
+  else
+    echo 'Activity content migration failed; the next deploy tries again.' >&2
+  fi
+fi
 cp "$RELEASE_LOCK" .deploy-state/deployed-release.json
 echo "Verified $DEPLOY_ENVIRONMENT deployment: $LAUNCHLMS_RELEASE_VERSION ($LAUNCHLMS_RELEASE_COMMIT_SHA)"
 
