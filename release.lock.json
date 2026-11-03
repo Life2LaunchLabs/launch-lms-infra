@@ -4,8 +4,8 @@
   "image_ref": "ghcr.io/life2launchlabs/launch-lms@sha256:571e4da131cd579b8a296b711e6d3480c552f03d981f955c9a6d2b339098aa32",
   "commit_sha": "59c6e8dee88f274d93985c8fbf65a62ef2b91587",
   "source_branch": "main",
-  "version": "v0.6.0",
-  "image_tag": "v0.6.0",
+  "version": "v0.6.1",
+  "image_tag": "v0.6.1",
   "build_run_id": "41627356585",
-  "released_at": "2026-11-03T16:27:35.680892+00:00"
+  "released_at": "2026-11-03T17:13:03.413919+00:00"
 }
