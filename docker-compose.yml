@@ -26,6 +26,10 @@ services:
       LAUNCHLMS_DEVELOPMENT_MODE: "false"
       LAUNCHLMS_RESOURCE_EMBEDDING_URL: http://embeddings:11434/api/embed
       LAUNCHLMS_RESOURCE_EMBEDDING_MODEL: all-minilm:33m
+      # The release this image runs as (it may have been built for the pull request that checked it).
+      LAUNCHLMS_RELEASE_COMMIT_SHA: ${LAUNCHLMS_RELEASE_COMMIT_SHA:-}
+      LAUNCHLMS_RELEASE_VERSION: ${LAUNCHLMS_RELEASE_VERSION:-}
+      LAUNCHLMS_RELEASE_SOURCE_BRANCH: ${LAUNCHLMS_RELEASE_SOURCE_BRANCH:-}
     volumes:
       - content_data:/app/api/content
     depends_on:

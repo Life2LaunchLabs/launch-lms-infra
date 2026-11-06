@@ -44,7 +44,11 @@ def observe(run_id: str, run_attempt: str) -> dict:
     if actual_image_id != locked_image_id:
         raise ValueError("The running container does not use the deployed image")
     build = json.loads(command("docker", "exec", container_id, "cat", "/app/build-info.json"))
-    if build.get("commit_sha") != source_sha or build.get("source_branch") != "dev":
+    # A pull request's checked image released as the dev commit was built from the pull request's commit.
+    built = lock.get("build_commit_sha", source_sha)
+    if not isinstance(built, str) or not SHA.fullmatch(built):
+        raise ValueError("The deployed release lacks the commit its image was built from")
+    if build.get("commit_sha") != built or (built == source_sha and build.get("source_branch") != "dev"):
         raise ValueError("The running application does not match the release source")
     infra_sha = command("git", "rev-parse", "HEAD")
     if not SHA.fullmatch(infra_sha):
