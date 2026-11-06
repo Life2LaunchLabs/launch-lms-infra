@@ -70,6 +70,14 @@ class DeploymentTests(unittest.TestCase):
             with self.subTest(lock=lock, env=env), self.assertRaises(ValueError):
                 module.validate(lock, env)
 
+    def test_a_pull_request_image_released_as_the_merged_commit_is_checked_against_its_build(self):
+        module = load('release-env')
+        module.validate({**self.lock(), 'build_commit_sha': 'c'*40}, 'unstable')
+        with self.assertRaises(ValueError):
+            module.validate({**self.lock(), 'build_commit_sha': 'short'}, 'unstable')
+        verify = (ROOT/'scripts/verify-deploy.sh').read_text()
+        self.assertIn('EXPECTED_COMMIT="$LAUNCHLMS_BUILD_COMMIT_SHA"', verify)
+
     def test_stale_dispatch_rejected_without_changing_lock(self):
         import base64
         with tempfile.TemporaryDirectory() as tmp:

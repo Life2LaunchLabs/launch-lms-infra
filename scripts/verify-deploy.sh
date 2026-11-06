@@ -8,7 +8,9 @@ test "$(docker inspect --format '{{.Config.Image}}' "$container")" = "$LAUNCHLMS
 # Verify local image identity as well as the reference supplied to Docker.
 test "$(docker inspect --format '{{.Image}}' "$container")" = "$(docker image inspect --format '{{.Id}}' "$LAUNCHLMS_IMAGE")"
 metadata=$(docker compose exec -T launch-lms cat /app/build-info.json)
-export EXPECTED_COMMIT="$LAUNCHLMS_RELEASE_COMMIT_SHA"
+# The image records the commit it was built from: the release commit, or the pull request run that
+# built and checked the same code (the app reports the release commit from the environment).
+export EXPECTED_COMMIT="$LAUNCHLMS_BUILD_COMMIT_SHA"
 head=$(printf '%s' "$metadata" | python3 -c 'import json,os,sys; d=json.load(sys.stdin); assert d["commit_sha"] == os.environ["EXPECTED_COMMIT"]; assert d["alembic_head"]; print(d["alembic_head"])')
 revision=$(docker compose run --rm --no-deps --entrypoint sh migrate -lc 'cd /app/api && uv run alembic current' | tail -n 1 | awk '{print $1}')
 test "$head" = "$revision"
