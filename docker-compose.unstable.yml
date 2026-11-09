@@ -11,6 +11,8 @@ services:
       LAUNCHLMS_REQUIRE_EMAIL_VERIFICATION: "false"
       LAUNCHLMS_IS_AI_ENABLED: "false"
       LAUNCHLMS_CONTENT_DELIVERY_TYPE: filesystem
+      # Platform › User tests: test personas, captured test mail, admin login links. Unstable only for now.
+      LAUNCHLMS_USER_TESTS_ENABLED: "true"
 networks:
   default:
     internal: true
