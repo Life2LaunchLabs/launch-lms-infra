@@ -36,7 +36,8 @@ if Path('.deployment-environment').read_text().strip() == 'unstable':
         raise ValueError('Unstable requires an independent filesystem content copy')
     forbidden = ('KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'CLIENT_ID')
     allowed = {'LAUNCHLMS_AUTH_JWT_SECRET_KEY', 'COLLAB_INTERNAL_KEY', 'POSTGRES_PASSWORD',
-        'LAUNCHLMS_INITIAL_ADMIN_PASSWORD', 'DO_AUTH_TOKEN', 'UNSTABLE_HTTP_PASSWORD_HASH'}
+        'LAUNCHLMS_INITIAL_ADMIN_PASSWORD', 'DO_AUTH_TOKEN', 'UNSTABLE_HTTP_PASSWORD_HASH',
+        'UNSTABLE_RIG_HTTP_PASSWORD_HASH'}
     if app_egress_enabled == 'true':
         allowed.update({
             'LAUNCHLMS_GEMINI_API_KEY',

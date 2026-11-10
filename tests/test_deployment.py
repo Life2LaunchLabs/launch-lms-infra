@@ -243,6 +243,51 @@ class DeploymentTests(unittest.TestCase):
             )
             self.assertLess(result.index('handle @connector'), result.index('basic_auth'))
 
+    def render_unstable_gate(self, extra=''):
+        password_hash = '$2a$14$' + 'a'*53
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)
+            shutil.copy(ROOT/'Caddyfile', path/'Caddyfile')
+            (path/'.deployment-environment').write_text('unstable\n')
+            (path/'.env').write_text(
+                'LAUNCHLMS_DOMAIN=test.example.net\n'
+                'UNSTABLE_HTTP_USER=launch_testers\n'
+                f'UNSTABLE_HTTP_PASSWORD_HASH={password_hash}\n' + extra
+            )
+            result=subprocess.run([sys.executable,str(ROOT/'scripts/render-caddy.py')],cwd=path,capture_output=True,text=True)
+            active=path/'Caddyfile.active'
+            return result, active.read_text() if active.exists() else ''
+
+    def test_unstable_gate_has_no_rig_login_unless_configured(self):
+        result, config = self.render_unstable_gate()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertNotIn('map {http.auth.user.id}', config)
+        self.assertEqual(1, config.count('$2a$14$'))
+
+    def test_rig_login_gets_its_own_gate_cookie(self):
+        rig_hash = '$2a$14$' + 'b'*53
+        result, config = self.render_unstable_gate(f'UNSTABLE_RIG_HTTP_USER=test_rig\nUNSTABLE_RIG_HTTP_PASSWORD_HASH={rig_hash}\n')
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(f'test_rig {rig_hash}', config)
+        tester = hashlib.sha256(('test.example.net\0$2a$14$' + 'a'*53).encode()).hexdigest()
+        rig = hashlib.sha256(f'test.example.net\0rig\0{rig_hash}'.encode()).hexdigest()
+        self.assertNotEqual(tester, rig)
+        self.assertIn(f'launchlms_unstable_gate=(?:{tester}|{rig})(;|$)', config)
+        self.assertIn(f'test_rig {rig}\n', config)
+        self.assertIn(f'default {tester}\n', config)
+        self.assertIn('launchlms_unstable_gate={unstable_gate_session}; Domain=.test.example.net', config)
+        self.assertLess(config.index('basic_auth'), config.index('map {http.auth.user.id}'))
+        self.assertLess(config.index('map {http.auth.user.id}'), config.index('header +Set-Cookie'))
+
+    def test_rig_login_must_be_complete_and_separate(self):
+        tester_hash = '$2a$14$' + 'a'*53
+        for extra in ('UNSTABLE_RIG_HTTP_USER=test_rig\n',
+                      'UNSTABLE_RIG_HTTP_PASSWORD_HASH=$2a$14$' + 'b'*53 + '\n',
+                      'UNSTABLE_RIG_HTTP_USER=launch_testers\nUNSTABLE_RIG_HTTP_PASSWORD_HASH=$2a$14$' + 'b'*53 + '\n',
+                      f'UNSTABLE_RIG_HTTP_USER=test_rig\nUNSTABLE_RIG_HTTP_PASSWORD_HASH={tester_hash}\n'):
+            result, _ = self.render_unstable_gate(extra)
+            self.assertNotEqual(0, result.returncode, extra)
+
     def test_legacy_unstable_host_only_exposes_nested_domain_tls_preflight(self):
         password_hash = '$2a$14$' + 'a'*53
         with tempfile.TemporaryDirectory() as tmp:
