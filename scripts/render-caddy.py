@@ -21,7 +21,28 @@ if deployment_environment == 'unstable':
     if not re.fullmatch(r'[a-zA-Z0-9_-]+', user) or not re.fullmatch(r'\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}', password_hash):
         raise ValueError('Unstable requires a tester HTTP username and bcrypt password hash')
     session = hashlib.sha256(f'{domain}\0{password_hash}'.encode()).hexdigest()
-    cookie = f'launchlms_unstable_gate={session}; Domain=.{domain}; Path=/; Max-Age=43200; Secure; HttpOnly; SameSite=Lax'
+    cookie_attributes = f'Domain=.{domain}; Path=/; Max-Age=43200; Secure; HttpOnly; SameSite=Lax'
+    logins = f'{user} {password_hash}'
+    sessions = session
+    set_cookie = f'header +Set-Cookie "launchlms_unstable_gate={session}; {cookie_attributes}"'
+    # Optional second login for the automated test rig (headless persona browsers).
+    # It has its own password and its own gate cookie, so removing these two
+    # settings and redeploying shuts the rig out without touching testers.
+    rig_user = env.get('UNSTABLE_RIG_HTTP_USER', '')
+    rig_hash = env.get('UNSTABLE_RIG_HTTP_PASSWORD_HASH', '')
+    if rig_user or rig_hash:
+        if not re.fullmatch(r'[a-zA-Z0-9_-]+', rig_user) or not re.fullmatch(r'\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}', rig_hash):
+            raise ValueError('The test rig login needs a username and a bcrypt password hash')
+        if rig_user == user or rig_hash == password_hash:
+            raise ValueError('The test rig login must differ from the shared tester login')
+        rig_session = hashlib.sha256(f'{domain}\0rig\0{rig_hash}'.encode()).hexdigest()
+        logins += f'\n                {rig_user} {rig_hash}'
+        sessions = f'(?:{session}|{rig_session})'
+        set_cookie = f'''map {{http.auth.user.id}} {{unstable_gate_session}} {{
+                {rig_user} {rig_session}
+                default {session}
+            }}
+            header +Set-Cookie "launchlms_unstable_gate={{unstable_gate_session}}; {cookie_attributes}"'''
     # Claude's connector servers cannot pass the tester gate, so the endpoints
     # they call stay reachable. Each authenticates on its own: OAuth metadata is
     # public, registration/token/revoke follow OAuth 2.1, and /api/v1/mcp only
@@ -31,16 +52,16 @@ if deployment_environment == 'unstable':
     handle @connector {{
         import launch_lms_proxy
     }}
-    @unstable_session header_regexp Cookie "(^|; *)launchlms_unstable_gate={session}(;|$)"
+    @unstable_session header_regexp Cookie "(^|; *)launchlms_unstable_gate={sessions}(;|$)"
     handle @unstable_session {{
         import launch_lms_proxy
     }}
     handle {{
         route {{
             basic_auth {{
-                {user} {password_hash}
+                {logins}
             }}
-            header +Set-Cookie "{cookie}"
+            {set_cookie}
             request_header -Authorization
             import launch_lms_proxy
         }}

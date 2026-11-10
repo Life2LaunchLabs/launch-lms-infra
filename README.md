@@ -152,6 +152,19 @@ has not benchmarked a fixed droplet size. Both amd64 and arm64 app images are bu
    successful tester prompt issues a secure 12-hour gate cookie shared by the
    unstable apex and organization subdomains, leaving the Authorization header
    available for the signed-in application's Bearer token.
+
+   **Test rig login (optional).** Headless persona browsers used for automated
+   story tests get their own gate login, so the shared tester password is never
+   handed to them. On the unstable host:
+   ```bash
+   docker run --rm -i caddy:2 caddy hash-password --algorithm bcrypt  # type the rig password
+   # In .env (single-quote the hash):
+   #   UNSTABLE_RIG_HTTP_USER='test_rig'
+   #   UNSTABLE_RIG_HTTP_PASSWORD_HASH='<hash>'
+   bash deploy.sh
+   ```
+   The rig gets its own 12-hour gate cookie. To shut it out, blank both values and
+   run `bash deploy.sh`; its cookies stop working at once and testers are unaffected.
 7. Setup writes private `.env`, `.deployment-environment`, and unstable lock files,
    then pulls the pinned app, starts dependencies, downloads the embedding model,
    migrates, starts the app/Caddy, verifies services, and backfills search. Secrets
