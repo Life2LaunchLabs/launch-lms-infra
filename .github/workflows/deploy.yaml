@@ -22,11 +22,42 @@ on:
 permissions:
   contents: read
   packages: read
-concurrency:
-  group: deploy-${{ github.event_name == 'repository_dispatch' && 'unstable' || inputs.environment || 'production' }}
-  cancel-in-progress: false
 jobs:
+  # Unstable only: wait while the site says a redeploy would cut something off (GET
+  # /api/v1/health/deploy-ready, asked from the host). A newer candidate cancels an older
+  # one's wait, so after a hold only the newest dev build deploys.
+  hold:
+    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'repository_dispatch' || inputs.environment == 'unstable')
+    runs-on: ubuntu-latest
+    timeout-minutes: 260
+    concurrency:
+      group: hold-unstable
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - name: Wait until unstable is ready to redeploy
+        uses: appleboy/ssh-action@v1
+        env:
+          WAIT_SCRIPT: ${{ github.sha }}
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          envs: WAIT_SCRIPT
+          command_timeout: 250m
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            # The host's checkout may predate the script; run this revision's copy.
+            git fetch -q origin main
+            git show "$WAIT_SCRIPT:scripts/wait-until-deploy-ready.py" | python3 -
   deploy:
+    needs: hold
+    if: ${{ !cancelled() && (needs.hold.result == 'success' || needs.hold.result == 'skipped') }}
+    concurrency:
+      group: deploy-${{ github.event_name == 'repository_dispatch' && 'unstable' || inputs.environment || 'production' }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'repository_dispatch' && 'unstable' || inputs.environment || 'production' }}
     steps:
