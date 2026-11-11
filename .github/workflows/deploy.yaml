@@ -27,7 +27,9 @@ jobs:
   # /api/v1/health/deploy-ready, asked from the host). A newer candidate cancels an older
   # one's wait, so after a hold only the newest dev build deploys.
   hold:
-    if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'repository_dispatch' || inputs.environment == 'unstable')
+    if: github.event_name == 'repository_dispatch' || inputs.environment == 'unstable'
+    # DEPLOY_ENABLED and the droplet secrets are environment-scoped: a job-level `if` can't see them.
+    environment: unstable
     runs-on: ubuntu-latest
     timeout-minutes: 260
     concurrency:
@@ -36,6 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Wait until unstable is ready to redeploy
+        if: vars.DEPLOY_ENABLED == 'true'
         uses: appleboy/ssh-action@v1
         env:
           WAIT_SCRIPT: ${{ github.sha }}
