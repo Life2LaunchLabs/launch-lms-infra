@@ -39,6 +39,9 @@ class WaitUntilDeployReady(unittest.TestCase):
         hold = workflow.split('  hold:\n', 1)[1].split('\n  deploy:\n', 1)[0]
         self.assertIn("github.event_name == 'repository_dispatch' || inputs.environment == 'unstable'", hold)
         self.assertIn('group: hold-unstable', hold)
+        # Environment-scoped settings (DEPLOY_ENABLED, droplet secrets) are only visible inside the environment.
+        self.assertIn('environment: unstable', hold)
+        self.assertNotIn('vars.', hold.split('steps:', 1)[0])
         self.assertIn('cancel-in-progress: true', hold)
         self.assertIn('scripts/wait-until-deploy-ready.py', hold)
         deploy = workflow.split('\n  deploy:\n', 1)[1]

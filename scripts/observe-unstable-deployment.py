@@ -48,7 +48,10 @@ def observe(run_id: str, run_attempt: str) -> dict:
     built = lock.get("build_commit_sha", source_sha)
     if not isinstance(built, str) or not SHA.fullmatch(built):
         raise ValueError("The deployed release lacks the commit its image was built from")
-    if build.get("commit_sha") != built or (built == source_sha and build.get("source_branch") != "dev"):
+    # dev's merge queue builds and checks the image on its queue branch, then reuses it on the push.
+    branch = str(build.get("source_branch") or "")
+    from_dev = branch == "dev" or branch.startswith("gh-readonly-queue/dev/")
+    if build.get("commit_sha") != built or (built == source_sha and not from_dev):
         raise ValueError("The running application does not match the release source")
     infra_sha = command("git", "rev-parse", "HEAD")
     if not SHA.fullmatch(infra_sha):
