@@ -58,6 +58,21 @@ jobs:
           DEPLOY_FINGERPRINT: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
         run: |
           test -n "$DEPLOY_HOST" && test -n "$DEPLOY_USER" && test -n "$DEPLOY_KEY" && test -n "$DEPLOY_FINGERPRINT"
+      - name: Hold while a user test is active on unstable
+        if: vars.DEPLOY_ENABLED == 'true' && (github.event_name == 'repository_dispatch' || inputs.environment == 'unstable')
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          fingerprint: ${{ secrets.DROPLET_SSH_FINGERPRINT }}
+          command_timeout: 200m
+          script: |
+            set -eu
+            cd /opt/launch-lms
+            # The running checkout's copy may predate this script; read the one from this revision.
+            git fetch -q origin main
+            git show "${{ github.sha }}:scripts/wait-for-user-tests.py" | python3 -
       - name: Deploy exact infra revision over SSH
         if: vars.DEPLOY_ENABLED == 'true'
         uses: appleboy/ssh-action@v1
