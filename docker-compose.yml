@@ -1,5 +1,15 @@
+# Every container's logs (request lines carry IP addresses) roll over at 50 MB and keep 5 files,
+# so they can't fill the disk and old lines are dropped. The student data page promises logs are
+# kept up to 90 days (launch-lms DEV-50); redeploys also start fresh logs.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 50m
+    max-file: "5"
+
 services:
   caddy:
+    logging: *default-logging
     build:
       context: .
       dockerfile: caddy.Dockerfile
@@ -18,6 +28,7 @@ services:
       - launch-lms
 
   launch-lms:
+    logging: *default-logging
     image: ${LAUNCHLMS_IMAGE}
     restart: unless-stopped
     env_file: .deploy-state/app.env
@@ -39,6 +50,7 @@ services:
         condition: service_healthy
 
   migrate:
+    logging: *default-logging
     image: ${LAUNCHLMS_IMAGE}
     restart: "no"
     env_file: .deploy-state/app.env
@@ -56,6 +68,7 @@ services:
       sh -lc "cd /app/api && ./scripts/run_alembic_migrations.sh"
 
   embeddings:
+    logging: *default-logging
     image: ollama/ollama:0.33.3
     restart: unless-stopped
     volumes:
@@ -67,6 +80,7 @@ services:
       retries: 30
 
   db:
+    logging: *default-logging
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
@@ -82,6 +96,7 @@ services:
       retries: 10
 
   redis:
+    logging: *default-logging
     image: redis:7-alpine
     restart: unless-stopped
     command: redis-server --appendonly yes
