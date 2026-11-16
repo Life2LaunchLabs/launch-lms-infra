@@ -24,7 +24,14 @@ if redis_url.path not in ('', '/') and not redis_url.path[1:].isdigit():
     raise ValueError('Redis database must be numeric, for example redis://redis:6379/0')
 if len(env.get('LAUNCHLMS_AUTH_JWT_SECRET_KEY', '')) < 32:
     raise ValueError('Generate a separate JWT secret for this installation')
-if Path('.deployment-environment').read_text().strip() == 'unstable':
+deployment = Path('.deployment-environment').read_text().strip()
+if deployment == 'production':
+    # Tester tools never reach production (DEV-27): the feedback bar, test personas and test login links.
+    for key in ('LAUNCHLMS_USER_TESTS_ENABLED', 'NEXT_PUBLIC_USER_TESTS_ENABLED',
+                'LAUNCHLMS_OPERATIONS_SURFACE_ENABLED', 'NEXT_PUBLIC_OPERATIONS_SURFACE_ENABLED'):
+        if env.get(key, '').strip().lower() in ('true', '1', 'yes'):
+            raise ValueError(f'{key} must stay off in production')
+if deployment == 'unstable':
     app_egress_enabled = env.get('UNSTABLE_APP_EGRESS_ENABLED', 'false')
     if app_egress_enabled not in ('true', 'false'):
         raise ValueError('UNSTABLE_APP_EGRESS_ENABLED must be true or false')
