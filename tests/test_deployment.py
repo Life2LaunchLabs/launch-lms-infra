@@ -214,6 +214,41 @@ class DeploymentTests(unittest.TestCase):
             )
             self.assertNotEqual(0, blocked.returncode)
 
+    def test_production_refuses_tester_tools(self):
+        base = (
+            'LAUNCHLMS_DEVELOPMENT_MODE=false\n'
+            'LAUNCHLMS_ENV=prod\n'
+            'LAUNCHLMS_INTERNAL_BACKEND_URL=http://localhost:9000\n'
+            'NEXT_PUBLIC_LAUNCHLMS_DEFAULT_ORG=default\n'
+            'LAUNCHLMS_REDIS_CONNECTION_STRING=redis://redis:6379/0\n'
+            'LAUNCHLMS_AUTH_JWT_SECRET_KEY=' + 'x'*40 + '\n'
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp)
+            (path/'.deployment-environment').write_text('production\n')
+            (path/'.env').write_text(base)
+            subprocess.run([sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, check=True)
+            for key in ('LAUNCHLMS_USER_TESTS_ENABLED', 'NEXT_PUBLIC_USER_TESTS_ENABLED',
+                        'LAUNCHLMS_OPERATIONS_SURFACE_ENABLED', 'NEXT_PUBLIC_OPERATIONS_SURFACE_ENABLED'):
+                for value in ('true', 'TRUE', '1', 'yes'):
+                    with self.subTest(key=key, value=value):
+                        (path/'.env').write_text(base + f'{key}={value}\n')
+                        blocked = subprocess.run(
+                            [sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, capture_output=True, text=True
+                        )
+                        self.assertNotEqual(0, blocked.returncode)
+                        self.assertIn(f'{key} must stay off in production', blocked.stderr)
+            (path/'.deployment-environment').write_text('unstable\n')
+            (path/'.env').write_text(base + 'LAUNCHLMS_USER_TESTS_ENABLED=true\n'
+                'LAUNCHLMS_SQL_CONNECTION_STRING=postgresql+psycopg2://launchlms:password@db:5432/launchlms\n'
+                'LAUNCHLMS_CONTENT_DELIVERY_TYPE=filesystem\n')
+            subprocess.run([sys.executable, str(ROOT/'scripts/check-environment.py')], cwd=path, check=True)
+
+    def test_production_compose_never_turns_on_tester_tools(self):
+        production = (ROOT/'docker-compose.yml').read_text()
+        for key in ('USER_TESTS_ENABLED', 'OPERATIONS_SURFACE_ENABLED'):
+            self.assertNotIn(key, production)
+
     def test_unstable_gate_uses_shared_session_cookie_without_forwarding_basic_auth(self):
         password_hash = '$2a$14$' + 'a'*53
         with tempfile.TemporaryDirectory() as tmp:
