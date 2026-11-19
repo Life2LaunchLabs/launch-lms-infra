@@ -265,7 +265,7 @@ class DeploymentTests(unittest.TestCase):
             self.assertIn('handle @unstable_session', result)
             self.assertIn('Domain=.test.example.net', result)
             self.assertIn('request_header -Authorization', result)
-            self.assertEqual(3, result.count('import launch_lms_proxy'))
+            self.assertEqual(4, result.count('import launch_lms_proxy'))
             self.assertNotIn('__LAUNCHLMS_ROUTES__', result)
             # Claude's connector endpoints bypass the tester gate; nothing else does.
             connector = next(line for line in result.splitlines() if line.strip().startswith('@connector path'))
@@ -277,6 +277,18 @@ class DeploymentTests(unittest.TestCase):
                  '/api/v1/mcp', '/api/v1/mcp/*'],
             )
             self.assertLess(result.index('handle @connector'), result.index('basic_auth'))
+
+    def test_canvas_lti_passes_the_gate_and_only_a_successful_launch_earns_a_partitioned_cookie(self):
+        result, config = self.render_unstable_gate()
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn('@canvas_lti path /api/v1/lti/*', config)
+        self.assertLess(config.index('handle @canvas_lti'), config.index('basic_auth'))
+        self.assertIn('@canvas_signed_in path /api/v1/lti/launch /api/v1/lti/session\n', config)
+        tester = hashlib.sha256(('test.example.net\0$2a$14$' + 'a'*53).encode()).hexdigest()
+        cookie_line = next(line for line in config.splitlines() if 'header @canvas_signed_in' in line)
+        self.assertIn(f'launchlms_unstable_gate={tester}; Domain=.test.example.net', cookie_line)
+        self.assertIn('SameSite=None; Partitioned', cookie_line)
+        self.assertIn('match status 2xx 3xx', config)
 
     def render_unstable_gate(self, extra=''):
         password_hash = '$2a$14$' + 'a'*53

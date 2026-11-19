@@ -48,7 +48,23 @@ if deployment_environment == 'unstable':
     # public, registration/token/revoke follow OAuth 2.1, and /api/v1/mcp only
     # accepts connector Bearer tokens. The consent page runs in the tester's
     # browser and stays behind the gate.
-    routes = f'''@connector path /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /api/v1/oauth/register /api/v1/oauth/token /api/v1/oauth/revoke /api/v1/mcp /api/v1/mcp/*
+    # Canvas (LTI 1.3) frames unstable from another site, where the SameSite=Lax
+    # gate cookie is never sent and a Basic prompt can't be answered. Its LTI
+    # endpoints authenticate on their own (signed id_token, one-use tickets),
+    # so they pass the gate. Only a successful launch or session hand-off earns
+    # a partitioned gate cookie, mirroring the app's own Canvas cookies, so the
+    # rest of the framed app loads without the tester password.
+    canvas_gate_cookie = (f'launchlms_unstable_gate={session}; Domain=.{domain}; Path=/; '
+                          'Max-Age=43200; Secure; HttpOnly; SameSite=None; Partitioned')
+    routes = f'''@canvas_lti path /api/v1/lti/*
+    handle @canvas_lti {{
+        @canvas_signed_in path /api/v1/lti/launch /api/v1/lti/session
+        header @canvas_signed_in +Set-Cookie "{canvas_gate_cookie}" {{
+            match status 2xx 3xx
+        }}
+        import launch_lms_proxy
+    }}
+    @connector path /.well-known/oauth-authorization-server /.well-known/oauth-authorization-server/* /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/* /api/v1/oauth/register /api/v1/oauth/token /api/v1/oauth/revoke /api/v1/mcp /api/v1/mcp/*
     handle @connector {{
         import launch_lms_proxy
     }}
